@@ -1,0 +1,82 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+package-lock.json
+
+# Environment variables
+.env
+
+#any future env files
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Build outputs
+build/
+dist/
+frontend/build/
+backend/dist/
+
+# Logs
+*.log
+logs/
+
+# Runtime data
+pids/
+*.pid
+*.seed
+
+# Coverage directory
+coverage/
+
+# Cache directories
+.cache/
+.npm/
+.eslintcache
+.stylelintcache
+
+# React specific
+frontend/src/output.css
+
+# Database files (keep schema and migrations)
+*.db
+*.sqlite
+*.sqlite3
+prisma/dev.db*
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# Supabase local development
+.supabase/
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# Test coverage
+.nyc_output/
+
+# Uploads (if any local file storage)
+uploads/
+public/uploads/
