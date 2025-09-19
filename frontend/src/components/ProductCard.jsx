@@ -4,14 +4,16 @@ import { ShoppingCart, Heart, Eye } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Card, CardContent } from './ui/card';
+import { api } from '../api';
 
-export default function ProductCard({ p, user, onLogin }) {
+export default function ProductCard({ p, user, onLogin, onCartUpdate }) {
   const navigate = useNavigate();
   const [stock, setStock] = useState(p.stock);
+  const [isAddingToCart, setIsAddingToCart] = useState(false);
 
   const price = p.priceMinor === 0 ? 'FREE' : `${(p.priceMinor / 100).toFixed(2)} ${p.currency}`;
 
-  const handlePurchase = () => {
+  const handleAddToCart = async () => {
     if (!user) {
       alert('Please login first');
       if (onLogin) onLogin();
@@ -19,7 +21,7 @@ export default function ProductCard({ p, user, onLogin }) {
     }
 
     if (user.sub === p.sellerId) {
-      alert('You cannot purchase your own items');
+      alert('You cannot add your own items to cart');
       return;
     }
 
@@ -28,8 +30,29 @@ export default function ProductCard({ p, user, onLogin }) {
       return;
     }
 
-    // Redirect to checkout page
-    navigate(`/checkout?productId=${p.id}&quantity=1`);
+    setIsAddingToCart(true);
+    try {
+      const response = await api.post('/cart/add', {
+        productId: p.id,
+        quantity: 1
+      });
+
+      if (response.data.success) {
+        alert('Item added to cart!');
+        // Notify parent component to update cart count
+        if (onCartUpdate) {
+          onCartUpdate();
+        }
+      } else {
+        alert(response.data.error || 'Failed to add item to cart');
+      }
+    } catch (error) {
+      console.error('Add to cart error:', error);
+      const errorMessage = error.response?.data?.error || 'Failed to add item to cart';
+      alert(errorMessage);
+    } finally {
+      setIsAddingToCart(false);
+    }
   };
 
   const isOwnProduct = user && user.sub === p.sellerId;
@@ -121,12 +144,13 @@ export default function ProductCard({ p, user, onLogin }) {
             </Button>
           ) : (
             <Button 
-              onClick={handlePurchase}
+              onClick={handleAddToCart}
+              disabled={isAddingToCart}
               className="w-full bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white shadow-sm"
               size="sm"
             >
               <ShoppingCart className="w-4 h-4 mr-2" />
-              Buy Now
+              {isAddingToCart ? 'Adding...' : 'Add to Cart'}
             </Button>
           )}
         </div>

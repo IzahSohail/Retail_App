@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../api';
 import ProductCard from './ProductCard';
 
-export default function ProductsList({ user, onLogin }) {
+export default function ProductsList({ user, onLogin, onCartUpdate }) {
   const [items, setItems] = useState([]);
   const [nextCursor, setNextCursor] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -144,7 +144,7 @@ export default function ProductsList({ user, onLogin }) {
 
       {/* Products Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-        {items.map(p => <ProductCard key={p.id} p={p} user={user} onLogin={onLogin} />)}
+        {items.map(p => <ProductCard key={p.id} p={p} user={user} onLogin={onLogin} onCartUpdate={onCartUpdate} />)}
       </div>
 
       {/* Load More */}

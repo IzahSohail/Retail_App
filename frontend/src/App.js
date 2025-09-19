@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
-import { ShoppingBag, User, LogOut, Plus } from 'lucide-react';
+import { ShoppingBag, User, LogOut, Plus, ShoppingCart } from 'lucide-react';
 import { api } from './api';
 import { Button } from './components/ui/button';
 import ProductsList from './components/ProductsList';
@@ -8,12 +8,32 @@ import UploadListing from './components/UploadListing';
 import UserListings from './components/UserListings';
 import ViewProfile from './components/ViewProfile';
 import Checkout from './components/Checkout';
+import Cart from './components/Cart';
 
 export default function App() {
   const [greet, setGreet] = useState('');
   const [profile, setProfile] = useState(null);
   const [userHasListings, setUserHasListings] = useState(false);
+  const [cartItemCount, setCartItemCount] = useState(0);
 
+  // Function to update cart count
+  const updateCartCount = useCallback(async () => {
+    if (!profile) {
+      setCartItemCount(0);
+      return;
+    }
+    
+    try {
+      const response = await api.get('/cart');
+      const itemCount = response.data.items?.length || 0;
+      setCartItemCount(itemCount);
+    } catch (error) {
+      console.error('Failed to load cart count:', error);
+      setCartItemCount(0);
+    }
+  }, [profile]);
+
+  // Separate useEffect for initial app load
   useEffect(() => {
     // Load greeting
     api.get('/greet')
@@ -33,8 +53,14 @@ export default function App() {
       .catch(() => {
         // User not logged in, that's fine
         setUserHasListings(false);
+        setCartItemCount(0);
       });
-  }, []);
+  }, []); // ✅ Run only once on mount
+
+  // Separate useEffect for cart count when profile changes
+  useEffect(() => {
+    updateCartCount();
+  }, [updateCartCount]);
 
   const backendBase = (process.env.REACT_APP_BACKEND_BASE || 'http://localhost:3001');
 
@@ -76,6 +102,17 @@ export default function App() {
                             Hi, {profile.name || profile.email?.split('@')[0] || 'User'}
                           </span>
                           
+                          <Link to="/cart">
+                            <Button variant="ghost" size="sm" className="relative">
+                              <ShoppingCart className="w-4 h-4 mr-2" />
+                              Cart
+                              {cartItemCount > 0 && (
+                                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center" style={{position: 'absolute', top: '-0.25rem', right: '-0.25rem', backgroundColor: '#ef4444', color: 'white', fontSize: '0.75rem', borderRadius: '50%', width: '1.25rem', height: '1.25rem', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+                                  {cartItemCount}
+                                </span>
+                              )}
+                            </Button>
+                          </Link>
                           <Link to="/profile">
                             <Button variant="ghost" size="sm">
                               <User className="w-4 h-4 mr-2" />
@@ -128,7 +165,7 @@ export default function App() {
                 </div>
 
                 {/* Products feed */}
-                <ProductsList user={profile} onLogin={handleLogin} />
+                <ProductsList user={profile} onLogin={handleLogin} onCartUpdate={updateCartCount} />
               </div>
             </>
           } />
@@ -143,6 +180,10 @@ export default function App() {
           
           <Route path="/profile" element={
             <ViewProfile user={profile} />
+          } />
+          
+          <Route path="/cart" element={
+            <Cart user={profile} />
           } />
           
           <Route path="/checkout" element={

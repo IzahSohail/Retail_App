@@ -14,50 +14,15 @@ import { uploadProductImage } from './supabase.js';
 
 const app = express();
 
-//TODO: Mock payment processing function, NOT properly implemented yet.
+// Mock payment processing function - Always returns APPROVED for testing
 function simulatePaymentProcessing(paymentMethod, totalMinor) {
-  // For demonstration purposes, simulate different scenarios
-  const random = Math.random();
+  // Always approve payments for now
+  const timestamp = Date.now();
+  const randomId = Math.random().toString(36).substr(2, 9);
   
-  // Cash payments have a higher success rate (95%)
-  if (paymentMethod === 'CASH') {
-    if (random < 0.95) {
-      return {
-        status: 'APPROVED',
-        approvalRef: `cash_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-      };
-    } else {
-      return {
-        status: 'DECLINED',
-        failureReason: 'Cash collection arrangement failed'
-      };
-    }
-  }
-  
-  // Cmaking up a card payment scenario
-  if (paymentMethod === 'CARD') {
-    if (random < 0.90) {
-      return {
-        status: 'APPROVED',
-        approvalRef: `card_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-      };
-    } else if (random < 0.95) {
-      return {
-        status: 'DECLINED',
-        failureReason: 'Insufficient funds'
-      };
-    } else {
-      return {
-        status: 'DECLINED',
-        failureReason: 'Card declined by bank'
-      };
-    }
-  }
-  
-  // Default fallback
   return {
     status: 'APPROVED',
-    approvalRef: `mock_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    approvalRef: `${paymentMethod.toLowerCase()}_${timestamp}_${randomId}`
   };
 }
 
@@ -581,7 +546,7 @@ app.post('/api/purchase', requiresAuth(), async (req, res) => {
         }
       });
 
-      // Create sale item (snapshot of product at time of purchase)
+      // Create sale item 
       await tx.saleItem.create({
         data: {
           saleId: sale.id,
@@ -683,6 +648,408 @@ app.get('/api/my-sales', requiresAuth(), async (req, res) => {
   }
 });
 
+// --- Cart API endpoints ---
+
+// GET /api/cart - Get user's cart
+app.get('/api/cart', requiresAuth(), async (req, res) => {
+  try {
+    const userAuth0Id = req.oidc.user.sub;
+    
+    // Find the user
+    const user = await prisma.user.findUnique({ where: { auth0Id: userAuth0Id } });
+    if (!user) {
+      return res.json({ cart: null, items: [] });
+    }
+
+    // Get or create cart
+    let cart = await prisma.cart.findUnique({
+      where: { userId: user.id },
+      include: {
+        items: {
+          include: {
+            product: {
+              include: {
+                category: true,
+                seller: {
+                  select: { id: true, name: true, email: true }
+                }
+              }
+            }
+          },
+          orderBy: { createdAt: 'desc' }
+        }
+      }
+    });
+
+    if (!cart) {
+      cart = await prisma.cart.create({
+        data: { userId: user.id },
+        include: {
+          items: {
+            include: {
+              product: {
+                include: {
+                  category: true,
+                  seller: {
+                    select: { id: true, name: true, email: true }
+                  }
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+
+    res.json({ cart, items: cart.items });
+  } catch (err) {
+    console.error('GET /api/cart error:', err);
+    res.status(500).json({ error: 'Failed to load cart' });
+  }
+});
+
+// POST /api/cart/add - Add item to cart . can use for integration test
+app.post('/api/cart/add', requiresAuth(), async (req, res) => {
+  try {
+    const { productId, quantity = 1 } = req.body;
+    const userAuth0Id = req.oidc.user.sub;
+
+    if (!productId || quantity < 1) {
+      return res.status(400).json({ error: 'Invalid product ID or quantity' });
+    }
+
+    // Find the user
+    const user = await prisma.user.findUnique({ where: { auth0Id: userAuth0Id } });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Check if product exists and is available
+    const product = await prisma.product.findUnique({ where: { id: productId } });
+    if (!product || !product.active) {
+      return res.status(404).json({ error: 'Product not found or unavailable' });
+    }
+
+    // Check if user is trying to add their own product
+    if (product.sellerId === user.id) {
+      return res.status(400).json({ error: 'Cannot add your own product to cart' });
+    }
+
+    // Check stock availability
+    if (product.stock < quantity) {
+      return res.status(400).json({ error: 'Insufficient stock' });
+    }
+
+    // Get or create cart
+    let cart = await prisma.cart.findUnique({ where: { userId: user.id } });
+    if (!cart) {
+      cart = await prisma.cart.create({ data: { userId: user.id } });
+    }
+
+    // Check if item already exists in cart
+    const existingCartItem = await prisma.cartItem.findUnique({
+      where: { cartId_productId: { cartId: cart.id, productId } }
+    });
+
+    let cartItem;
+    if (existingCartItem) {
+      // Update quantity
+      const newQuantity = existingCartItem.quantity + quantity;
+      if (newQuantity > product.stock) {
+        return res.status(400).json({ error: 'Cannot add more items than available in stock' });
+      }
+      
+      cartItem = await prisma.cartItem.update({
+        where: { id: existingCartItem.id },
+        data: { quantity: newQuantity },
+        include: { product: true }
+      });
+    } else {
+      // Create new cart item
+      cartItem = await prisma.cartItem.create({
+        data: {
+          cartId: cart.id,
+          productId,
+          quantity
+        },
+        include: { product: true }
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Item added to cart',
+      cartItem
+    });
+  } catch (err) {
+    console.error('POST /api/cart/add error:', err);
+    res.status(500).json({ error: 'Failed to add item to cart' });
+  }
+});
+
+// PUT /api/cart/update - Update cart item quantity
+app.put('/api/cart/update', requiresAuth(), async (req, res) => {
+  try {
+    const { productId, quantity } = req.body;
+    const userAuth0Id = req.oidc.user.sub;
+
+    if (!productId || quantity < 1) {
+      return res.status(400).json({ error: 'Invalid product ID or quantity' });
+    }
+
+    // Find the user and cart
+    const user = await prisma.user.findUnique({ where: { auth0Id: userAuth0Id } });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const cart = await prisma.cart.findUnique({ where: { userId: user.id } });
+    if (!cart) {
+      return res.status(404).json({ error: 'Cart not found' });
+    }
+
+    // Check product stock
+    const product = await prisma.product.findUnique({ where: { id: productId } });
+    if (!product || quantity > product.stock) {
+      return res.status(400).json({ error: 'Insufficient stock' });
+    }
+
+    // Update cart item
+    const cartItem = await prisma.cartItem.update({
+      where: { cartId_productId: { cartId: cart.id, productId } },
+      data: { quantity },
+      include: { product: true }
+    });
+
+    res.json({
+      success: true,
+      message: 'Cart item updated',
+      cartItem
+    });
+  } catch (err) {
+    console.error('PUT /api/cart/update error:', err);
+    res.status(500).json({ error: 'Failed to update cart item' });
+  }
+});
+
+// DELETE /api/cart/remove - Remove item from cart
+app.delete('/api/cart/remove', requiresAuth(), async (req, res) => {
+  try {
+    const { productId } = req.body;
+    const userAuth0Id = req.oidc.user.sub;
+
+    if (!productId) {
+      return res.status(400).json({ error: 'Product ID required' });
+    }
+
+    // Find the user and cart
+    const user = await prisma.user.findUnique({ where: { auth0Id: userAuth0Id } });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const cart = await prisma.cart.findUnique({ where: { userId: user.id } });
+    if (!cart) {
+      return res.status(404).json({ error: 'Cart not found' });
+    }
+
+    // Remove cart item
+    await prisma.cartItem.delete({
+      where: { cartId_productId: { cartId: cart.id, productId } }
+    });
+
+    res.json({
+      success: true,
+      message: 'Item removed from cart'
+    });
+  } catch (err) {
+    console.error('DELETE /api/cart/remove error:', err);
+    res.status(500).json({ error: 'Failed to remove item from cart' });
+  }
+});
+
+// POST /api/cart/checkout - Checkout cart items
+app.post('/api/cart/checkout', requiresAuth(), async (req, res) => {
+  try {
+    const { paymentMethod = 'CARD' } = req.body;
+    const buyerAuth0Id = req.oidc.user.sub;
+    const buyerEmail = req.oidc.user.email;
+
+    // Find the user
+    const user = await prisma.user.findUnique({ where: { auth0Id: buyerAuth0Id } });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Get cart with items
+    const cart = await prisma.cart.findUnique({
+      where: { userId: user.id },
+      include: {
+        items: {
+          include: {
+            product: true
+          }
+        }
+      }
+    });
+
+    if (!cart || cart.items.length === 0) {
+      return res.status(400).json({ error: 'Cart is empty' });
+    }
+
+    // Validate all items and calculate totals
+    let subtotalMinor = 0;
+    const validatedItems = [];
+
+    for (const cartItem of cart.items) {
+      const product = cartItem.product;
+      
+      // Check if product is still available and has enough stock
+      if (!product.active) {
+        return res.status(400).json({ error: `Product "${product.title}" is no longer available` });
+      }
+      
+      if (product.stock < cartItem.quantity) {
+        return res.status(400).json({ 
+          error: `Insufficient stock for "${product.title}". Available: ${product.stock}, Requested: ${cartItem.quantity}` 
+        });
+      }
+
+      // Check if user is trying to buy their own product
+      if (product.sellerId === user.id) {
+        return res.status(400).json({ error: `Cannot purchase your own product: "${product.title}"` });
+      }
+
+      const lineTotal = product.priceMinor * cartItem.quantity;
+      subtotalMinor += lineTotal;
+
+      validatedItems.push({
+        cartItem,
+        product,
+        lineTotal
+      });
+    }
+
+    const taxMinor = 0; // No tax for now
+    const feesMinor = 0; // No fees for now
+    const totalMinor = subtotalMinor + taxMinor + feesMinor;
+
+    // Use transaction to ensure atomicity
+    const result = await prisma.$transaction(async (tx) => {
+      // Create the sale
+      const sale = await tx.sale.create({
+        data: {
+          buyerId: user.id,
+          status: 'PENDING',
+          subtotalMinor,
+          taxMinor,
+          feesMinor,
+          totalMinor,
+          currency: 'AED'
+        }
+      });
+
+      // Create sale items and update product stock
+      for (const { cartItem, product, lineTotal } of validatedItems) {
+        // Create sale item
+        await tx.saleItem.create({
+          data: {
+            saleId: sale.id,
+            productId: product.id,
+            quantity: cartItem.quantity,
+            unitMinor: product.priceMinor,
+            lineTotalMinor: lineTotal
+          }
+        });
+
+        // Update product stock
+        await tx.product.update({
+          where: { id: product.id },
+          data: { stock: { decrement: cartItem.quantity } }
+        });
+      }
+
+      // Mock payment processing
+      const mockPaymentResult = simulatePaymentProcessing(paymentMethod, totalMinor);
+      
+      const payment = await tx.payment.create({
+        data: {
+          saleId: sale.id,
+          method: paymentMethod,
+          status: mockPaymentResult.status,
+          approvalRef: mockPaymentResult.status === 'APPROVED' ? mockPaymentResult.approvalRef : null,
+          failureReason: mockPaymentResult.status === 'DECLINED' ? mockPaymentResult.failureReason : null
+        }
+      });
+
+      // If payment failed, throw error to rollback transaction
+      if (mockPaymentResult.status === 'DECLINED') {
+        throw new Error(`Payment failed: ${mockPaymentResult.failureReason}`);
+      }
+
+      // Update sale status to completed
+      await tx.sale.update({
+        where: { id: sale.id },
+        data: { 
+          status: 'COMPLETED',
+          completedAt: new Date()
+        }
+      });
+
+      // Clear the cart after successful purchase
+      await tx.cartItem.deleteMany({
+        where: { cartId: cart.id }
+      });
+
+      return { sale, payment };
+    });
+
+    res.json({
+      success: true,
+      message: 'Purchase completed successfully!',
+      sale: result.sale,
+      payment: result.payment
+    });
+
+  } catch (err) {
+    console.error('POST /api/cart/checkout error:', err);
+    res.status(400).json({ 
+      error: err.message || 'Checkout failed',
+      success: false 
+    });
+  }
+});
+
+// DELETE /api/cart/clear - Clear entire cart
+app.delete('/api/cart/clear', requiresAuth(), async (req, res) => {
+  try {
+    const userAuth0Id = req.oidc.user.sub;
+
+    // Find the user and cart
+    const user = await prisma.user.findUnique({ where: { auth0Id: userAuth0Id } });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const cart = await prisma.cart.findUnique({ where: { userId: user.id } });
+    if (!cart) {
+      return res.json({ success: true, message: 'Cart already empty' });
+    }
+
+    // Clear all cart items
+    await prisma.cartItem.deleteMany({
+      where: { cartId: cart.id }
+    });
+
+    res.json({
+      success: true,
+      message: 'Cart cleared'
+    });
+  } catch (err) {
+    console.error('DELETE /api/cart/clear error:', err);
+    res.status(500).json({ error: 'Failed to clear cart' });
+  }
+});
 
 // Serve frontend (built) if exists, otherwise redirect root to CRA dev server
 const __filename = fileURLToPath(import.meta.url);
@@ -702,8 +1069,14 @@ if (fs.existsSync(indexHtmlPath)) {
   });
 }
 
-app.listen(PORT, () => {
-  console.log(`Server listening on ${BASE_URL}`);
-});
+// Only start server if not in test mode
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => {
+    console.log(`Server listening on ${BASE_URL}`);
+  });
+}
+
+// Export for testing
+export { simulatePaymentProcessing, app };
 
 
