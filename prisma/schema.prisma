@@ -60,22 +60,24 @@ model Product {
 }
 
 model Sale {
-  id            String     @id @default(cuid())
-  buyerId       String
-  status        SaleStatus @default(PENDING)
-  subtotalMinor Int
-  taxMinor      Int        @default(0)
-  feesMinor     Int        @default(0)
-  totalMinor    Int
-  currency      String     @default("AED")
-  createdAt     DateTime   @default(now())
-  completedAt   DateTime?
-  payment       Payment?
-  buyer         User       @relation("BuyerSales", fields: [buyerId], references: [id], onDelete: Cascade)
-  items         SaleItem[]
+  id              String     @id @default(cuid())
+  buyerId         String
+  status          SaleStatus @default(PENDING)
+  subtotalMinor   Int
+  taxMinor        Int        @default(0)
+  feesMinor       Int        @default(0)
+  totalMinor      Int
+  currency        String     @default("AED")
+  idempotencyKey  String?    @unique
+  createdAt       DateTime   @default(now())
+  completedAt     DateTime?
+  payment         Payment?
+  buyer           User       @relation("BuyerSales", fields: [buyerId], references: [id], onDelete: Cascade)
+  items           SaleItem[]
 
   @@index([buyerId, status])
   @@index([createdAt])
+  @@index([idempotencyKey])
   @@map("sales")
 }
 

@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import morgan from 'morgan';
+import morgan from 'morgan'; 
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -16,7 +16,7 @@ const app = express();
 
 // Mock payment processing function - Always returns APPROVED for testing
 function simulatePaymentProcessing(paymentMethod, totalMinor) {
-  // Always approve payments for now
+  // todo: Always approve payments for now
   const timestamp = Date.now();
   const randomId = Math.random().toString(36).substr(2, 9);
   
@@ -24,6 +24,31 @@ function simulatePaymentProcessing(paymentMethod, totalMinor) {
     status: 'APPROVED',
     approvalRef: `${paymentMethod.toLowerCase()}_${timestamp}_${randomId}`
   };
+}
+
+// Test authentication middleware - allows bypassing Auth0 in test mode
+function testAuthMiddleware(req, res, next) {
+  // If in test mode and test buyer info is provided, mock the session
+  if (process.env.NODE_ENV === 'test' && req.body._testBuyerAuth0Id) {
+    req.oidc = {
+      isAuthenticated: () => true,
+      user: {
+        sub: req.body._testBuyerAuth0Id,
+        email: req.body._testBuyerEmail,
+        name: req.body._testBuyerName,
+        picture: req.body._testBuyerPicture
+      }
+    };
+    // Remove test fields from body so they don't interfere
+    delete req.body._testBuyerAuth0Id;
+    delete req.body._testBuyerEmail;
+    delete req.body._testBuyerName;
+    delete req.body._testBuyerPicture;
+    return next();
+  }
+  
+  // Otherwise, require actual Auth0 authentication
+  return requiresAuth()(req, res, next);
 }
 
 // Basic config
@@ -112,7 +137,10 @@ const authConfig = {
   }
 };
 
-app.use(auth(authConfig));
+// Only enable Auth0 in non-test mode
+if (process.env.NODE_ENV !== 'test') {
+  app.use(auth(authConfig));
+}
 
 // Session info
 app.get('/api/profile', requiresAuth(), async (req, res) => {
@@ -479,51 +507,90 @@ app.delete('/api/listings/:id', requiresAuth(), async (req, res) => {
 
 // --- Purchase endpoint ---
 // POST /api/purchase
-app.post('/api/purchase', requiresAuth(), async (req, res) => {
+app.post('/api/purchase', testAuthMiddleware, async (req, res) => {
   try {
     const { productId, quantity = 1, paymentMethod = 'CARD' } = req.body;
     const buyerAuth0Id = req.oidc.user.sub;
     const buyerEmail = req.oidc.user.email;
+    const idempotencyKey = req.headers['idempotency-key'];
 
     // Validate inputs
     if (!productId || quantity < 1) {
       return res.status(400).json({ error: 'Invalid product ID or quantity' });
     }
 
-    // Find or create the buyer user in our database
-    let buyer = await prisma.user.findUnique({ where: { auth0Id: buyerAuth0Id } });
-    if (!buyer) {
-      buyer = await prisma.user.create({
-        data: {
-          auth0Id: buyerAuth0Id,
-          email: buyerEmail,
-          name: req.oidc.user.name,
-          picture: req.oidc.user.picture,
-          lastLogin: new Date()
-        }
+    // Check for existing sale with same idempotency key
+    if (idempotencyKey) {
+      const existingSale = await prisma.sale.findUnique({
+        where: { idempotencyKey },
+        include: { payment: true }
       });
+      
+      if (existingSale) {
+        return res.json({
+          success: true,
+          message: 'Purchase already processed',
+          saleId: existingSale.id,
+          status: existingSale.status,
+          payment: existingSale.payment
+        });
+      }
     }
 
-    // Start a transaction to ensure atomicity
-    const result = await prisma.$transaction(async (tx) => {
-      // Get the product with current stock
-      const product = await tx.product.findUnique({
-        where: { id: productId, active: true }
+    // Upsert buyer to avoid race conditions on first login
+    const buyer = await prisma.user.upsert({
+      where: { auth0Id: buyerAuth0Id },
+      update: { lastLogin: new Date() },
+      create: {
+        auth0Id: buyerAuth0Id,
+        email: buyerEmail,
+        name: req.oidc.user.name,
+        picture: req.oidc.user.picture,
+        lastLogin: new Date()
+      }
+    });
+
+    // Phase 1: Fast atomic stock reservation transaction
+    const sale = await prisma.$transaction(async (tx) => {
+      // Atomic stock reservation with all validations in WHERE clause
+      const stockUpdate = await tx.product.updateMany({
+        where: { 
+          id: productId,
+          active: true,
+          sellerId: { not: buyer.id }, // Not buyer's own product
+          stock: { gte: quantity }     // Sufficient stock
+        },
+        data: { 
+          stock: { decrement: quantity } 
+        }
       });
 
-      if (!product) {
-        throw new Error('Product not found or inactive');
+      // Check if reservation succeeded
+      if (stockUpdate.count === 0) {
+        // Get product details for better error message
+        const product = await tx.product.findUnique({
+          where: { id: productId }
+        });
+        
+        if (!product) {
+          throw new Error('Product not found');
+        }
+        if (!product.active) {
+          throw new Error('Product is no longer available');
+        }
+        if (product.sellerId === buyer.id) {
+          throw new Error('Cannot purchase your own product');
+        }
+        if (product.stock < quantity) {
+          throw new Error(`Insufficient stock. Only ${product.stock} available`);
+        }
+        throw new Error('Stock reservation failed');
       }
 
-      // Check if user is trying to buy their own product
-      if (product.sellerId === buyer.id) {
-        throw new Error('Cannot purchase your own product');
-      }
-
-      // Check stock availability
-      if (product.stock < quantity) {
-        throw new Error(`Insufficient stock. Only ${product.stock} available`);
-      }
+      // Get product details for pricing
+      const product = await tx.product.findUnique({
+        where: { id: productId }
+      });
 
       // Calculate totals
       const unitMinor = product.priceMinor;
@@ -533,8 +600,8 @@ app.post('/api/purchase', requiresAuth(), async (req, res) => {
       const feesMinor = Math.round(subtotalMinor * 0.02); // 2% processing fee
       const totalMinor = subtotalMinor + taxMinor + feesMinor;
 
-      // Create the sale record
-      const sale = await tx.sale.create({
+      // Create PENDING sale with reserved stock
+      const newSale = await tx.sale.create({
         data: {
           buyerId: buyer.id,
           status: 'PENDING',
@@ -542,14 +609,15 @@ app.post('/api/purchase', requiresAuth(), async (req, res) => {
           taxMinor,
           feesMinor,
           totalMinor,
-          currency: product.currency
+          currency: product.currency,
+          idempotencyKey
         }
       });
 
-      // Create sale item 
+      // Create sale item (snapshot of product at time of purchase)
       await tx.saleItem.create({
         data: {
-          saleId: sale.id,
+          saleId: newSale.id,
           productId: product.id,
           quantity,
           unitMinor,
@@ -557,9 +625,15 @@ app.post('/api/purchase', requiresAuth(), async (req, res) => {
         }
       });
 
-      // Mock payment processing - simulate approval/rejection
-      const mockPaymentResult = simulatePaymentProcessing(paymentMethod, totalMinor);
-      
+      return { ...newSale, product };
+    });
+
+    // Phase 2: Payment processing (outside transaction)
+    const mockPaymentResult = simulatePaymentProcessing(paymentMethod, sale.totalMinor);
+    
+    // Phase 3: Finalize sale based on payment result
+    const finalResult = await prisma.$transaction(async (tx) => {
+      // Create payment record
       const payment = await tx.payment.create({
         data: {
           saleId: sale.id,
@@ -570,39 +644,53 @@ app.post('/api/purchase', requiresAuth(), async (req, res) => {
         }
       });
 
-      // If payment failed, throw error to rollback transaction
-      if (mockPaymentResult.status === 'DECLINED') {
-        throw new Error(`Payment failed: ${mockPaymentResult.failureReason}`);
+      if (mockPaymentResult.status === 'APPROVED') {
+        // Payment successful - mark sale as completed
+        const completedSale = await tx.sale.update({
+          where: { id: sale.id, status: 'PENDING' }, // Guarded state change
+          data: { 
+            status: 'COMPLETED',
+            completedAt: new Date()
+          }
+        });
+        
+        return { sale: completedSale, payment, success: true };
+      } else {
+        // Payment failed - cancel sale and return stock
+        const canceledSale = await tx.sale.update({
+          where: { id: sale.id, status: 'PENDING' }, // Guarded state change
+          data: { status: 'CANCELED' }
+        });
+
+        // Return reserved stock
+        await tx.product.update({
+          where: { id: productId },
+          data: { stock: { increment: quantity } }
+        });
+
+        return { sale: canceledSale, payment, success: false };
       }
-
-      // Decrement product stock
-      const updatedProduct = await tx.product.update({
-        where: { id: productId },
-        data: { stock: product.stock - quantity }
-      });
-
-      // Mark sale as completed
-      const completedSale = await tx.sale.update({
-        where: { id: sale.id },
-        data: { 
-          status: 'COMPLETED',
-          completedAt: new Date()
-        }
-      });
-
-      return {
-        sale: completedSale,
-        payment,
-        product: updatedProduct
-      };
     });
 
-    res.json({
-      success: true,
-      message: 'Purchase completed successfully',
-      saleId: result.sale.id,
-      newStock: result.product.stock
-    });
+    if (finalResult.success) {
+      // Get updated product stock for response
+      const updatedProduct = await prisma.product.findUnique({
+        where: { id: productId }
+      });
+
+      res.json({
+        success: true,
+        message: 'Purchase completed successfully',
+        saleId: finalResult.sale.id,
+        newStock: updatedProduct.stock
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        error: `Payment failed: ${finalResult.payment.failureReason}`,
+        saleId: finalResult.sale.id
+      });
+    }
 
   } catch (err) {
     console.error('POST /api/purchase error:', err);
@@ -874,12 +962,37 @@ app.post('/api/cart/checkout', requiresAuth(), async (req, res) => {
     const { paymentMethod = 'CARD' } = req.body;
     const buyerAuth0Id = req.oidc.user.sub;
     const buyerEmail = req.oidc.user.email;
+    const idempotencyKey = req.headers['idempotency-key'];
 
-    // Find the user
-    const user = await prisma.user.findUnique({ where: { auth0Id: buyerAuth0Id } });
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
+    // Check for existing sale with same idempotency key
+    if (idempotencyKey) {
+      const existingSale = await prisma.sale.findUnique({
+        where: { idempotencyKey },
+        include: { payment: true }
+      });
+      
+      if (existingSale) {
+        return res.json({
+          success: true,
+          message: 'Cart checkout already processed',
+          sale: existingSale,
+          payment: existingSale.payment
+        });
+      }
     }
+
+    // Upsert user to avoid race conditions
+    const user = await prisma.user.upsert({
+      where: { auth0Id: buyerAuth0Id },
+      update: { lastLogin: new Date() },
+      create: {
+        auth0Id: buyerAuth0Id,
+        email: buyerEmail,
+        name: req.oidc.user.name,
+        picture: req.oidc.user.picture,
+        lastLogin: new Date()
+      }
+    });
 
     // Get cart with items
     const cart = await prisma.cart.findUnique({
@@ -897,22 +1010,16 @@ app.post('/api/cart/checkout', requiresAuth(), async (req, res) => {
       return res.status(400).json({ error: 'Cart is empty' });
     }
 
-    // Validate all items and calculate totals
+    // Pre-validate items (basic checks only - stock will be validated atomically)
     let subtotalMinor = 0;
     const validatedItems = [];
 
     for (const cartItem of cart.items) {
       const product = cartItem.product;
       
-      // Check if product is still available and has enough stock
+      // Check if product is still available
       if (!product.active) {
         return res.status(400).json({ error: `Product "${product.title}" is no longer available` });
-      }
-      
-      if (product.stock < cartItem.quantity) {
-        return res.status(400).json({ 
-          error: `Insufficient stock for "${product.title}". Available: ${product.stock}, Requested: ${cartItem.quantity}` 
-        });
       }
 
       // Check if user is trying to buy their own product
@@ -934,10 +1041,44 @@ app.post('/api/cart/checkout', requiresAuth(), async (req, res) => {
     const feesMinor = 0; // No fees for now
     const totalMinor = subtotalMinor + taxMinor + feesMinor;
 
-    // Use transaction to ensure atomicity
-    const result = await prisma.$transaction(async (tx) => {
-      // Create the sale
-      const sale = await tx.sale.create({
+    // Phase 1: Fast atomic stock reservation transaction
+    const sale = await prisma.$transaction(async (tx) => {
+      // Reserve stock for all items atomically
+      const stockReservations = [];
+      
+      for (const { cartItem, product } of validatedItems) {
+        const stockUpdate = await tx.product.updateMany({
+          where: { 
+            id: product.id,
+            active: true,
+            sellerId: { not: user.id }, // Not user's own product
+            stock: { gte: cartItem.quantity } // Sufficient stock
+          },
+          data: { 
+            stock: { decrement: cartItem.quantity } 
+          }
+        });
+
+        if (stockUpdate.count === 0) {
+          // Get current product state for better error message
+          const currentProduct = await tx.product.findUnique({
+            where: { id: product.id }
+          });
+          
+          if (!currentProduct || !currentProduct.active) {
+            throw new Error(`Product "${product.title}" is no longer available`);
+          }
+          if (currentProduct.stock < cartItem.quantity) {
+            throw new Error(`Insufficient stock for "${product.title}". Available: ${currentProduct.stock}, Requested: ${cartItem.quantity}`);
+          }
+          throw new Error(`Stock reservation failed for "${product.title}"`);
+        }
+        
+        stockReservations.push({ productId: product.id, quantity: cartItem.quantity });
+      }
+
+      // Create PENDING sale with reserved stock
+      const newSale = await tx.sale.create({
         data: {
           buyerId: user.id,
           status: 'PENDING',
@@ -945,33 +1086,33 @@ app.post('/api/cart/checkout', requiresAuth(), async (req, res) => {
           taxMinor,
           feesMinor,
           totalMinor,
-          currency: 'AED'
+          currency: 'AED',
+          idempotencyKey
         }
       });
 
-      // Create sale items and update product stock
+      // Create sale items
       for (const { cartItem, product, lineTotal } of validatedItems) {
-        // Create sale item
         await tx.saleItem.create({
           data: {
-            saleId: sale.id,
+            saleId: newSale.id,
             productId: product.id,
             quantity: cartItem.quantity,
             unitMinor: product.priceMinor,
             lineTotalMinor: lineTotal
           }
         });
-
-        // Update product stock
-        await tx.product.update({
-          where: { id: product.id },
-          data: { stock: { decrement: cartItem.quantity } }
-        });
       }
 
-      // Mock payment processing
-      const mockPaymentResult = simulatePaymentProcessing(paymentMethod, totalMinor);
-      
+      return { ...newSale, stockReservations };
+    });
+
+    // Phase 2: Payment processing (outside transaction)
+    const mockPaymentResult = simulatePaymentProcessing(paymentMethod, sale.totalMinor);
+    
+    // Phase 3: Finalize sale based on payment result
+    const finalResult = await prisma.$transaction(async (tx) => {
+      // Create payment record
       const payment = await tx.payment.create({
         data: {
           saleId: sale.id,
@@ -982,34 +1123,55 @@ app.post('/api/cart/checkout', requiresAuth(), async (req, res) => {
         }
       });
 
-      // If payment failed, throw error to rollback transaction
-      if (mockPaymentResult.status === 'DECLINED') {
-        throw new Error(`Payment failed: ${mockPaymentResult.failureReason}`);
-      }
+      if (mockPaymentResult.status === 'APPROVED') {
+        // Payment successful - mark sale as completed and clear cart
+        const completedSale = await tx.sale.update({
+          where: { id: sale.id, status: 'PENDING' }, // Guarded state change
+          data: { 
+            status: 'COMPLETED',
+            completedAt: new Date()
+          }
+        });
 
-      // Update sale status to completed
-      await tx.sale.update({
-        where: { id: sale.id },
-        data: { 
-          status: 'COMPLETED',
-          completedAt: new Date()
+        // Clear the cart after successful purchase
+        await tx.cartItem.deleteMany({
+          where: { cartId: cart.id }
+        });
+        
+        return { sale: completedSale, payment, success: true };
+      } else {
+        // Payment failed - cancel sale and return all reserved stock
+        const canceledSale = await tx.sale.update({
+          where: { id: sale.id, status: 'PENDING' }, // Guarded state change
+          data: { status: 'CANCELED' }
+        });
+
+        // Return all reserved stock
+        for (const { productId, quantity } of sale.stockReservations) {
+          await tx.product.update({
+            where: { id: productId },
+            data: { stock: { increment: quantity } }
+          });
         }
-      });
 
-      // Clear the cart after successful purchase
-      await tx.cartItem.deleteMany({
-        where: { cartId: cart.id }
-      });
-
-      return { sale, payment };
+        return { sale: canceledSale, payment, success: false };
+      }
     });
 
-    res.json({
-      success: true,
-      message: 'Purchase completed successfully!',
-      sale: result.sale,
-      payment: result.payment
-    });
+    if (finalResult.success) {
+      res.json({
+        success: true,
+        message: 'Purchase completed successfully!',
+        sale: finalResult.sale,
+        payment: finalResult.payment
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        error: `Payment failed: ${finalResult.payment.failureReason}`,
+        sale: finalResult.sale
+      });
+    }
 
   } catch (err) {
     console.error('POST /api/cart/checkout error:', err);

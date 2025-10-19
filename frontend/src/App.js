@@ -57,7 +57,7 @@ export default function App() {
       });
   }, []); // ✅ Run only once on mount
 
-  // Separate useEffect for cart count when profile changes
+  // Separate useEffect for cart count when profile changes..todo: what does this mean??
   useEffect(() => {
     updateCartCount();
   }, [updateCartCount]);
