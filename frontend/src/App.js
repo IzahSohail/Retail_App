@@ -9,6 +9,8 @@ import UserListings from './components/UserListings';
 import ViewProfile from './components/ViewProfile';
 import Checkout from './components/Checkout';
 import Cart from './components/Cart';
+import BusinessRegister from './business_panel/BusinessRegister';
+import BusinessDashboard from './business_panel/BusinessDashboard';
 
 export default function App() {
   const [greet, setGreet] = useState('');
@@ -93,9 +95,16 @@ export default function App() {
                     {/* Navigation */}
                     <div className="flex items-center space-x-2" style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
                       {!profile ? (
-                        <Button onClick={handleLogin} className="bg-gradient-to-r from-purple-400 to-purple-600 text-white" style={{background: 'linear-gradient(to right, #c084fc, #9333ea)', color: 'white', padding: '0.5rem 1rem', borderRadius: '0.375rem', border: 'none', cursor: 'pointer', fontWeight: '500'}}>
-                          Login / Signup
-                        </Button>
+                        <>
+                          <Button onClick={handleLogin} variant="ghost" size="sm">
+                            Login / Signup
+                          </Button>
+                          <Link to="/business">
+                            <Button className="bg-gradient-to-r from-purple-400 to-purple-600 text-white" style={{background: 'linear-gradient(to right, #c084fc, #9333ea)', color: 'white', padding: '0.5rem 1rem', borderRadius: '0.375rem', border: 'none', cursor: 'pointer', fontWeight: '500'}}>
+                              Register Your Business
+                            </Button>
+                          </Link>
+                        </>
                       ) : (
                         <>
                           <span className="text-sm text-gray-600 mr-2" style={{fontSize: '0.875rem', color: '#4b5563', marginRight: '0.5rem'}}>
@@ -189,6 +198,10 @@ export default function App() {
           <Route path="/checkout" element={
             <Checkout user={profile} />
           } />
+
+          <Route path="/business" element={<BusinessRegister />} />
+          <Route path="/business/dashboard" element={<BusinessDashboard />} />
+
         </Routes>
       </div>
     </Router>

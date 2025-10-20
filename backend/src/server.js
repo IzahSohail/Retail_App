@@ -9,8 +9,12 @@ import pkg from 'express-openid-connect';
 const { auth, requiresAuth } = pkg;
 import jwt from 'jsonwebtoken';
 import multer from 'multer';
+import session from 'express-session';
 import { prisma } from './db.js';
 import { uploadProductImage } from './supabase.js';
+
+// for the business panel 
+import businessRouter from './routes/business.js';
 
 const app = express();
 
@@ -76,42 +80,64 @@ app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use(morgan('dev'));
 
+// Session middleware (required for Auth0 and business registration tracking)
+app.use(session({
+  secret: process.env.APP_SESSION_SECRET || 'fallback-secret-for-dev',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: false, // Set to true in production with HTTPS
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+  }
+}));
+
 // Auth0 config (OIDC)
 const authConfig = {
   authRequired: false,
   auth0Logout: true,
   secret: process.env.APP_SESSION_SECRET,
-  baseURL: BASE_URL,
+  baseURL: BASE_URL, // This is the backend URL
   issuerBaseURL: process.env.AUTH0_ISSUER_BASE_URL,
   clientID: process.env.AUTH0_CLIENT_ID,
   clientSecret: process.env.AUTH0_CLIENT_SECRET,
   authorizationParams: {
-    scope: 'openid profile email'
+    scope: 'openid profile email',
+    redirect_uri: `${BASE_URL}/callback` // Explicit callback to backend
   },
   routes: {
     login: '/login',
-    callback: '/callback'
+    callback: '/callback',
+    logout: '/logout',
+    postLogoutRedirect: 'http://localhost:3000' // Frontend after logout
   },
   afterCallback: async (req, res, session, state) => {
     try {
-      console.log('Full session object:', JSON.stringify(session, null, 2));
+      console.log('🔵 [afterCallback] Session:', JSON.stringify(session, null, 2));
+      console.log('🔵 [afterCallback] Req session:', req.session);
+      
+      // Check if this is a business registration from session
+      const isBusiness = req.session?.registrationType === 'business';
+      console.log('🔵 [afterCallback] Is business registration:', isBusiness);
+      
+      // Clear the registration type from session
+      if (req.session?.registrationType) {
+        delete req.session.registrationType;
+      }
       
       // Decode the id_token JWT to get user info
       let user = {};
       if (session.id_token) {
         try {
-          // Decode without verification (Auth0 already verified it)
           const decoded = jwt.decode(session.id_token);
           user = decoded || {};
-          console.log('Decoded JWT user data:', {
+          console.log('🔵 [afterCallback] Decoded user:', {
             sub: user.sub,
             email: user.email,
-            name: user.name,
-            picture: user.picture,
-            email_verified: user.email_verified
+            name: user.name
           });
         } catch (jwtError) {
-          console.error('JWT decode error:', jwtError);
+          console.error('❌ [afterCallback] JWT decode error:', jwtError);
         }
       }
       
@@ -121,17 +147,62 @@ const authConfig = {
       const picture = user.picture;
       
       if (auth0Id && email) {
+        // Determine role based on registration type
+        const role = isBusiness ? 'BUSINESS' : 'USER';
+        console.log(`🔵 [afterCallback] Setting user role: ${role}`);
+        
         const dbUser = await prisma.user.upsert({
           where: { email },
-          update: { auth0Id, name, picture, lastLogin: new Date() },
-          create: { email, name, picture, auth0Id, lastLogin: new Date() }
+          update: { 
+            auth0Id, 
+            name, 
+            picture, 
+            lastLogin: new Date(),
+            // Only update role if it's currently USER and we're upgrading to BUSINESS
+            ...(isBusiness && { role: 'BUSINESS' })
+          },
+          create: { 
+            email, 
+            name, 
+            picture, 
+            auth0Id, 
+            role,
+            lastLogin: new Date() 
+          }
         });
-        console.log('Upserted user in DB:', dbUser);
+        
+        console.log('✅ [afterCallback] Upserted user:', dbUser.email, 'Role:', dbUser.role);
+        
+        // If business user, create B2B record
+        if (isBusiness && dbUser.role === 'BUSINESS') {
+          const existingB2B = await prisma.b2B.findUnique({
+            where: { userId: dbUser.id }
+          });
+          
+          if (!existingB2B) {
+            await prisma.b2B.create({
+              data: {
+                userId: dbUser.id,
+                status: 'PENDING'
+              }
+            });
+            console.log('✅ [afterCallback] Created B2B record');
+          }
+        }
       } else {
-        console.warn('Missing auth0Id or email in decoded token; skipping upsert', { auth0Id, email });
+        console.warn('⚠️ [afterCallback] Missing auth0Id or email', { auth0Id, email });
       }
+      
+      // Store redirect URL in session for business users
+      if (isBusiness) {
+        session.redirectTo = 'http://localhost:3000/business/dashboard';
+        req.session.redirectTo = 'http://localhost:3000/business/dashboard'; // Also store in req.session
+        console.log('🔵 [afterCallback] Set redirectTo in session:', session.redirectTo);
+        console.log('🔵 [afterCallback] Set redirectTo in req.session:', req.session.redirectTo);
+      }
+      
     } catch (e) {
-      console.error('afterCallback upsert error:', e);
+      console.error('❌ [afterCallback] Error:', e);
     }
     return session;
   }
@@ -139,7 +210,41 @@ const authConfig = {
 
 // Only enable Auth0 in non-test mode
 if (process.env.NODE_ENV !== 'test') {
+  // Custom login handler to capture type parameter
+  app.get('/login', (req, res, next) => {
+    const type = req.query.type;
+    console.log('🔵 [/login] Type parameter:', type);
+    
+    if (type === 'business') {
+      // Store in session that this is a business registration
+      req.session = req.session || {};
+      req.session.registrationType = 'business';
+      console.log('🔵 [/login] Stored business registration type in session');
+    }
+    
+    // Let Auth0 middleware handle the login
+    next();
+  });
+  
   app.use(auth(authConfig));
+  
+  // Custom route to handle post-login redirects
+  app.get('/', (req, res, next) => {
+    console.log('🔵 [post-login redirect] Checking redirect conditions:');
+    console.log('  - req.oidc:', !!req.oidc);
+    console.log('  - req.oidc.user:', !!req.oidc?.user);
+    console.log('  - req.session:', !!req.session);
+    console.log('  - req.session.redirectTo:', req.session?.redirectTo);
+    
+    // Check if user is authenticated and has a redirect URL in session
+    if (req.oidc && req.oidc.user && req.session && req.session.redirectTo) {
+      const redirectTo = req.session.redirectTo;
+      delete req.session.redirectTo; // Clear the redirect URL
+      console.log(`✅ [post-login redirect] Redirecting to: ${redirectTo}`);
+      return res.redirect(redirectTo);
+    }
+    next();
+  });
 }
 
 // Session info
@@ -1212,6 +1317,9 @@ app.delete('/api/cart/clear', requiresAuth(), async (req, res) => {
     res.status(500).json({ error: 'Failed to clear cart' });
   }
 });
+
+app.use('/api/business', businessRouter);
+
 
 // Serve frontend (built) if exists, otherwise redirect root to CRA dev server
 const __filename = fileURLToPath(import.meta.url);
