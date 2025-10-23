@@ -199,19 +199,25 @@ export default function Cart({ user }) {
                 </CardHeader>
                 <CardContent className="space-y-4" style={{padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem'}}>
                   {cartItems.map(item => {
-                    const price = item.product.priceMinor === 0 ? 'FREE' : `${(item.product.priceMinor / 100).toFixed(2)} AED`;
-                    const lineTotal = item.product.priceMinor * item.quantity;
+                    const product = item.product;
+                    const productId = item.product.id;
+                    const price = product.priceMinor === 0 ? 'FREE' : `${(product.priceMinor / 100).toFixed(2)} AED`;
+                    const lineTotal = product.priceMinor * item.quantity;
                     const lineTotalPrice = lineTotal === 0 ? 'FREE' : `${(lineTotal / 100).toFixed(2)} AED`;
-                    const isUpdating = updating[item.product.id];
+                    const isUpdating = updating[productId];
+                    
+                    // Check if it's a business product
+                    const isBusinessProduct = product.seller?.role === 'BUSINESS';
+                    const businessName = product.seller?.b2b?.businessName;
 
                     return (
                       <div key={item.id} className="flex items-center space-x-4 p-4 bg-gray-50 rounded-lg" style={{display: 'flex', alignItems: 'center', gap: '1rem', padding: '1rem', backgroundColor: '#f9fafb', borderRadius: '0.5rem'}}>
                         {/* Product Image */}
                         <div className="w-20 h-20 bg-gray-200 rounded-lg flex items-center justify-center flex-shrink-0" style={{width: '5rem', height: '5rem', backgroundColor: '#e5e7eb', borderRadius: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0}}>
-                          {item.product.imageUrl ? (
+                          {product.imageUrl ? (
                             <img 
-                              src={item.product.imageUrl} 
-                              alt={item.product.title}
+                              src={product.imageUrl} 
+                              alt={product.title}
                               className="w-full h-full object-cover rounded-lg"
                               style={{width: '100%', height: '100%', objectFit: 'cover', borderRadius: '0.5rem'}}
                             />
@@ -222,11 +228,14 @@ export default function Cart({ user }) {
 
                         {/* Product Info */}
                         <div className="flex-1" style={{flex: 1}}>
-                          <h3 className="font-semibold text-gray-800" style={{fontWeight: '600', color: '#1f2937'}}>{item.product.title}</h3>
-                          <p className="text-sm text-gray-600 line-clamp-2" style={{fontSize: '0.875rem', color: '#4b5563'}}>{item.product.description}</p>
+                          <h3 className="font-semibold text-gray-800" style={{fontWeight: '600', color: '#1f2937'}}>{product.title}</h3>
+                          {isBusinessProduct && businessName && (
+                            <span className="text-xs text-blue-600 font-medium">🏢 {businessName}</span>
+                          )}
+                          <p className="text-sm text-gray-600 line-clamp-2" style={{fontSize: '0.875rem', color: '#4b5563'}}>{product.description}</p>
                           <div className="flex items-center space-x-2 mt-1" style={{display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem'}}>
                             <span className="text-purple-600 font-semibold" style={{color: '#9333ea', fontWeight: '600'}}>{price}</span>
-                            <Badge variant="outline" style={{border: '1px solid #d1d5db', color: '#6b7280'}}>Stock: {item.product.stock}</Badge>
+                            <Badge variant="outline" style={{border: '1px solid #d1d5db', color: '#6b7280'}}>Stock: {product.stock}</Badge>
                           </div>
                         </div>
 
@@ -235,7 +244,7 @@ export default function Cart({ user }) {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => updateQuantity(item.product.id, item.quantity - 1)}
+                            onClick={() => updateQuantity(productId, item.quantity - 1)}
                             disabled={isUpdating || item.quantity <= 1}
                             style={{padding: '0.25rem 0.5rem', fontSize: '0.875rem', border: '1px solid #d1d5db'}}
                           >
@@ -245,8 +254,8 @@ export default function Cart({ user }) {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => updateQuantity(item.product.id, item.quantity + 1)}
-                            disabled={isUpdating || item.quantity >= item.product.stock}
+                            onClick={() => updateQuantity(productId, item.quantity + 1)}
+                            disabled={isUpdating || item.quantity >= product.stock}
                             style={{padding: '0.25rem 0.5rem', fontSize: '0.875rem', border: '1px solid #d1d5db'}}
                           >
                             <Plus className="w-4 h-4" />
@@ -262,7 +271,7 @@ export default function Cart({ user }) {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => removeItem(item.product.id)}
+                          onClick={() => removeItem(productId)}
                           disabled={isUpdating}
                           className="text-red-600 hover:text-red-700 hover:bg-red-50"
                           style={{color: '#dc2626', border: '1px solid #d1d5db'}}

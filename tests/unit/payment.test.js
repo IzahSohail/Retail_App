@@ -1,82 +1,181 @@
-// Unit test for payment processing function
+// Unit test for payment processing with PaymentService
+import { PaymentService, MockPaymentAdapter } from '../../backend/src/services/PaymentService.js';
 
-// This mirrors the exact function from server.js lines 18-27
-function simulatePaymentProcessing(paymentMethod, totalMinor) {
-  // Always approve payments for now
-  const timestamp = Date.now();
-  const randomId = Math.random().toString(36).substr(2, 9);
-  
-  return {
-    status: 'APPROVED',
-    approvalRef: `${paymentMethod.toLowerCase()}_${timestamp}_${randomId}`
-  };
-}
+describe('Payment Service Unit Tests', () => {
+  let paymentService;
 
-describe('Payment Processing Unit Tests', () => {
-  test('should always return APPROVED status', () => {
-    const result = simulatePaymentProcessing('CARD', 1000);
-    
+  beforeEach(() => {
+    // Create a fresh payment service for each test
+    const mockAdapter = new MockPaymentAdapter({
+      failureRate: 0,
+      networkErrorRate: 0,
+      processingDelay: 10
+    });
+    paymentService = new PaymentService(mockAdapter, {
+      maxRetries: 2,
+      retryDelay: 100
+    });
+  });
+
+  test('should process payment successfully', async () => {
+    const result = await paymentService.processPayment({
+      amount: 1000,
+      currency: 'AED',
+      paymentMethod: 'CARD',
+      idempotencyKey: 'test-key-1'
+    });
+
+    expect(result.success).toBe(true);
     expect(result.status).toBe('APPROVED');
-    expect(result.approvalRef).toBeDefined();
+    expect(result.transactionId).toBeDefined();
   });
 
-  test('should handle CARD payment method correctly', () => {
-    const result = simulatePaymentProcessing('CARD', 2500);
-    
+  test('should handle idempotency correctly', async () => {
+    const paymentRequest = {
+      amount: 1000,
+      currency: 'AED',
+      paymentMethod: 'CARD',
+      idempotencyKey: 'test-key-2'
+    };
+
+    const result1 = await paymentService.processPayment(paymentRequest);
+    const result2 = await paymentService.processPayment(paymentRequest);
+
+    expect(result1.transactionId).toBe(result2.transactionId);
+    expect(result1).toEqual(result2);
+  });
+
+  test('should retry on network errors', async () => {
+    const flakyAdapter = new MockPaymentAdapter({
+      failureRate: 0,
+      networkErrorRate: 0.8, // High error rate
+      processingDelay: 10
+    });
+    const retryService = new PaymentService(flakyAdapter, {
+      maxRetries: 5,
+      retryDelay: 50
+    });
+
+    // Should eventually succeed after retries
+    const result = await retryService.processPayment({
+      amount: 1000,
+      currency: 'AED',
+      paymentMethod: 'CARD',
+      idempotencyKey: 'test-retry-1'
+    });
+
+    expect(result.success).toBe(true);
     expect(result.status).toBe('APPROVED');
-    expect(result.approvalRef).toMatch(/^card_\d+_[a-z0-9]+$/);
   });
 
-  test('should handle CASH payment method correctly', () => {
-    const result = simulatePaymentProcessing('CASH', 1500);
-    
-    expect(result.status).toBe('APPROVED');
-    expect(result.approvalRef).toMatch(/^cash_\d+_[a-z0-9]+$/);
+  test('should handle payment declined', async () => {
+    const failingAdapter = new MockPaymentAdapter({
+      failureRate: 1, // Always fail
+      networkErrorRate: 0,
+      processingDelay: 10
+    });
+    const failService = new PaymentService(failingAdapter);
+
+    const result = await failService.processPayment({
+      amount: 1000,
+      currency: 'AED',
+      paymentMethod: 'CARD',
+      idempotencyKey: 'test-fail-1'
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe('FAILED');
   });
 
-  test('should generate unique approval references', () => {
-    const result1 = simulatePaymentProcessing('CARD', 1000);
-    const result2 = simulatePaymentProcessing('CARD', 1000);
-    
-    expect(result1.approvalRef).not.toBe(result2.approvalRef);
-    expect(result1.approvalRef).toMatch(/^card_\d+_[a-z0-9]+$/);
-    expect(result2.approvalRef).toMatch(/^card_\d+_[a-z0-9]+$/);
+  test('should handle invalid amount', async () => {
+    const result = await paymentService.processPayment({
+      amount: -100,
+      currency: 'AED',
+      paymentMethod: 'CARD',
+      idempotencyKey: 'test-invalid-1'
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.message).toContain('Invalid');
   });
 
-  test('should work with zero amount (free items)', () => {
-    const result = simulatePaymentProcessing('CARD', 0);
-    
-    expect(result.status).toBe('APPROVED');
-    expect(result.approvalRef).toMatch(/^card_\d+_[a-z0-9]+$/);
+  test('should process multiple different payments', async () => {
+    const result1 = await paymentService.processPayment({
+      amount: 1000,
+      currency: 'AED',
+      paymentMethod: 'CARD',
+      idempotencyKey: 'test-multi-1'
+    });
+
+    const result2 = await paymentService.processPayment({
+      amount: 2000,
+      currency: 'AED',
+      paymentMethod: 'CASH',
+      idempotencyKey: 'test-multi-2'
+    });
+
+    expect(result1.success).toBe(true);
+    expect(result2.success).toBe(true);
+    expect(result1.transactionId).not.toBe(result2.transactionId);
+  });
+});
+
+describe('Circuit Breaker Tests', () => {
+  test('should open circuit after failure threshold', async () => {
+    const failingAdapter = new MockPaymentAdapter({
+      failureRate: 1,
+      networkErrorRate: 0,
+      processingDelay: 10
+    });
+    const cbService = new PaymentService(failingAdapter, {
+      maxRetries: 0,
+      failureThreshold: 3
+    });
+
+    // Make enough failures to open circuit
+    for (let i = 0; i < 3; i++) {
+      await cbService.processPayment({
+        amount: 1000,
+        currency: 'AED',
+        paymentMethod: 'CARD',
+        idempotencyKey: `test-cb-${i}`
+      });
+    }
+
+    const status = cbService.getCircuitBreakerStatus();
+    expect(status.state).toBe('OPEN');
+    expect(status.failureCount).toBeGreaterThanOrEqual(3);
   });
 
-  test('should handle different payment methods case insensitively', () => {
-    const cardResult = simulatePaymentProcessing('CARD', 1500);
-    const cashResult = simulatePaymentProcessing('CASH', 1500);
-    
-    expect(cardResult.status).toBe('APPROVED');
-    expect(cashResult.status).toBe('APPROVED');
-    expect(cardResult.approvalRef).toContain('card_');
-    expect(cashResult.approvalRef).toContain('cash_');
-  });
+  test('should reset circuit breaker', async () => {
+    const failingAdapter = new MockPaymentAdapter({
+      failureRate: 1,
+      networkErrorRate: 0,
+      processingDelay: 10
+    });
+    const cbService = new PaymentService(failingAdapter, {
+      maxRetries: 0,
+      failureThreshold: 2
+    });
 
-  test('should include timestamp in approval reference', () => {
-    const beforeTime = Date.now();
-    const result = simulatePaymentProcessing('CARD', 1000);
-    const afterTime = Date.now();
-    
-    // Extract timestamp from approval reference (format: method_timestamp_randomId)
-    const parts = result.approvalRef.split('_');
-    const timestamp = parseInt(parts[1]);
-    
-    expect(timestamp).toBeGreaterThanOrEqual(beforeTime);
-    expect(timestamp).toBeLessThanOrEqual(afterTime);
-  });
+    // Open circuit
+    await cbService.processPayment({
+      amount: 1000,
+      currency: 'AED',
+      paymentMethod: 'CARD',
+      idempotencyKey: 'test-reset-1'
+    });
+    await cbService.processPayment({
+      amount: 1000,
+      currency: 'AED',
+      paymentMethod: 'CARD',
+      idempotencyKey: 'test-reset-2'
+    });
 
-  test('should handle edge case payment methods', () => {
-    const result = simulatePaymentProcessing('BANK_TRANSFER', 5000);
+    cbService.resetCircuitBreaker();
+    const status = cbService.getCircuitBreakerStatus();
     
-    expect(result.status).toBe('APPROVED');
-    expect(result.approvalRef).toMatch(/^bank_transfer_\d+_[a-z0-9]+$/);
+    expect(status.state).toBe('CLOSED');
+    expect(status.failureCount).toBe(0);
   });
 });

@@ -1,0 +1,9 @@
+title,description,price,category,stock,imageUrl
+"Valid Product","This is a valid product description with enough characters to pass validation.",99.99,electronics,10,https://example.com/valid.jpg
+"Too Short","Short",50.00,electronics,5,
+"Invalid Price","This product has a valid description but invalid price format.",INVALID,electronics,5,
+"","Valid description but missing title that should fail validation.",29.99,electronics,5,
+"Wrong Category","This product has a valid description and all fields correct.",49.99,invalid_category,5,
+"Negative Stock","Valid description for a product with negative stock value.",19.99,textbooks,-5,
+"Too Expensive","Valid description but price exceeds maximum allowed limit.",9999999.99,electronics,10,
+

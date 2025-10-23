@@ -30,6 +30,13 @@ export default function UploadListing({ user }) {
       navigate('/');
       return;
     }
+    
+    // Redirect business users to their catalog upload
+    if (user.role === 'BUSINESS') {
+      alert('Business users should upload catalogs from the Business Dashboard');
+      navigate('/business/dashboard');
+      return;
+    }
 
     // Load categories
     const loadCategories = async () => {

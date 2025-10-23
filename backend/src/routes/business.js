@@ -4,6 +4,7 @@ const { requiresAuth } = pkg;
 import { prisma } from '../db.js';
 import multer from 'multer';
 import { createClient } from '@supabase/supabase-js';
+import { runETL } from '../services/catalogETL.js';
 
 const router = express.Router();
 
@@ -161,7 +162,7 @@ router.post('/verify', requiresAuth(), upload.fields([
   }
 });
 
-// POST /api/business/catalog - Upload product catalog (CSV/JSON)
+// POST /api/business/catalog - Upload product catalog (CSV/JSON) with ETL
 router.post('/catalog', requiresAuth(), upload.single('catalog'), async (req, res) => {
   try {
     const auth0Id = req.oidc.user.sub;
@@ -185,118 +186,88 @@ router.post('/catalog', requiresAuth(), upload.single('catalog'), async (req, re
     }
     
     const b2bId = user.b2b.id;
-    let products = [];
     
-    // Parse file based on type
-    if (req.file.mimetype === 'text/csv') {
-      // Parse CSV
-      const csvText = req.file.buffer.toString('utf-8');
-      const lines = csvText.split('\n').filter(line => line.trim());
-      
-      if (lines.length < 2) {
-        return res.status(400).json({ error: 'CSV file is empty or invalid' });
-      }
-      
-      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-      
-      // Validate required columns
-      const required = ['title', 'description', 'price', 'category', 'stock'];
-      const missing = required.filter(r => !headers.includes(r));
-      if (missing.length > 0) {
-        return res.status(400).json({ error: `Missing required columns: ${missing.join(', ')}` });
-      }
-      
-      // Parse rows
-      for (let i = 1; i < lines.length; i++) {
-        const values = lines[i].split(',').map(v => v.trim());
-        const product = {};
-        headers.forEach((header, idx) => {
-          product[header] = values[idx];
-        });
-        products.push(product);
-      }
-    } else if (req.file.mimetype === 'application/json') {
-      // Parse JSON
-      products = JSON.parse(req.file.buffer.toString('utf-8'));
-      
-      if (!Array.isArray(products)) {
-        return res.status(400).json({ error: 'JSON must be an array of products' });
-      }
-      
-      // Validate required fields
-      const required = ['title', 'description', 'price', 'category', 'stock'];
-      for (const product of products) {
-        const missing = required.filter(r => !product[r]);
-        if (missing.length > 0) {
-          return res.status(400).json({ error: `Product missing required fields: ${missing.join(', ')}` });
-        }
-      }
+    // ============================================================================
+    // RUN ETL PIPELINE (Extract, Transform, Load)
+    // ============================================================================
+    
+    console.log(`📦 [ETL] Starting catalog upload for business: ${user.b2b.businessName || user.email}`);
+    console.log(`📦 [ETL] File type: ${req.file.mimetype}, Size: ${req.file.size} bytes`);
+    
+    // Get all categories from database
+    const dbCategories = await prisma.category.findMany();
+    
+    // Run ETL pipeline
+    const etlResult = await runETL(req.file.buffer, req.file.mimetype, dbCategories);
+    
+    if (!etlResult.success) {
+      console.error(`❌ [ETL] Pipeline failed: ${etlResult.error}`);
+      return res.status(400).json({ 
+        error: etlResult.error,
+        extracted: etlResult.results.extracted,
+        validated: etlResult.results.validated,
+        failed: etlResult.results.failed
+      });
     }
     
-    // Get all categories for mapping
-    const categories = await prisma.category.findMany();
-    const categoryMap = {};
-    categories.forEach(cat => {
-      categoryMap[cat.name.toLowerCase()] = cat.id;
-    });
+    const { validProducts, failedProducts } = etlResult.results;
     
-    // Process products and upsert to database
+    console.log(`✅ [ETL] Extracted: ${etlResult.results.extracted} products`);
+    console.log(`✅ [ETL] Validated: ${etlResult.results.validated} products`);
+    console.log(`❌ [ETL] Failed: ${etlResult.results.failed} products`);
+    
+    // ============================================================================
+    // LOAD PHASE: Insert valid products into database
+    // ============================================================================
+    
     const addedProducts = [];
-    const failedProducts = [];
+    const loadFailedProducts = [];
     
-    for (const product of products) {
+    for (const productData of validProducts) {
       try {
-        const categoryName = product.category.toLowerCase().trim();
-        const categoryId = categoryMap[categoryName];
-        
-        if (!categoryId) {
-          failedProducts.push({
-            product: product.title,
-            reason: `Category "${product.category}" not found in our categories`
-          });
-          continue;
-        }
-        
-        // Convert price to minor units (cents)
-        const priceMinor = Math.round(parseFloat(product.price) * 100);
-        
-        const newProduct = await prisma.b2BProduct.create({
+        const newProduct = await prisma.product.create({
           data: {
-            b2bId,
-            title: product.title,
-            description: product.description,
-            priceMinor,
-            currency: product.currency || 'AED',
-            stock: parseInt(product.stock),
-            categoryId,
-            imageUrl: product.imageUrl || product.imageurl || null
+            sellerId: user.id, // Business user's ID as seller
+            active: true,
+            ...productData
           }
         });
         
         addedProducts.push(newProduct);
       } catch (err) {
-        console.error('Error adding product:', product.title, err);
-        failedProducts.push({
-          product: product.title,
-          reason: err.message
+        console.error(`❌ [ETL LOAD] Failed to insert product:`, err);
+        loadFailedProducts.push({
+          product: productData.title,
+          row: 'N/A',
+          errors: [`Database error: ${err.message}`]
         });
       }
     }
     
+    console.log(`💾 [ETL LOAD] Successfully loaded ${addedProducts.length} products to database`);
+    
+    // Combine failed products from validation and load phases
+    const allFailedProducts = [...failedProducts, ...loadFailedProducts];
+    
     res.json({
       success: true,
-      message: `Successfully added ${addedProducts.length} products`,
-      addedCount: addedProducts.length,
-      failedCount: failedProducts.length,
-      failedProducts
+      message: `Successfully added ${addedProducts.length} of ${etlResult.results.extracted} products`,
+      summary: {
+        total: etlResult.results.extracted,
+        validated: etlResult.results.validated,
+        loaded: addedProducts.length,
+        failed: allFailedProducts.length
+      },
+      failedProducts: allFailedProducts.length > 0 ? allFailedProducts : undefined
     });
+    
   } catch (err) {
-    console.error('Error uploading catalog:', err);
-    res.status(500).json({ error: 'Failed to upload catalog' });
+    console.error('❌ [ETL] Unexpected error:', err);
+    res.status(500).json({ error: 'Failed to upload catalog: ' + err.message });
   }
 });
 
-// GET /api/business/products - Get all B2B products for this business
+// GET /api/business/products - Get all products for this business
 router.get('/products', requiresAuth(), async (req, res) => {
   try {
     const auth0Id = req.oidc.user.sub;
@@ -310,15 +281,15 @@ router.get('/products', requiresAuth(), async (req, res) => {
       return res.status(404).json({ error: 'Business record not found' });
     }
     
-    const products = await prisma.b2BProduct.findMany({
-      where: { b2bId: user.b2b.id },
+    const products = await prisma.product.findMany({
+      where: { sellerId: user.id },
       include: { category: true },
       orderBy: { createdAt: 'desc' }
     });
     
     res.json({ products });
   } catch (err) {
-    console.error('Error fetching B2B products:', err);
+    console.error('Error fetching business products:', err);
     res.status(500).json({ error: 'Failed to fetch products' });
   }
 });

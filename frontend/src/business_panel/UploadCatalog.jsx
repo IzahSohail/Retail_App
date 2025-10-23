@@ -115,15 +115,32 @@ export default function UploadCatalog({ businessInfo }) {
                 <p className={message.type === 'success' ? 'text-green-800' : 'text-red-800'}>
                   {message.text}
                 </p>
-                {message.details && message.details.failedProducts && message.details.failedProducts.length > 0 && (
-                  <div className="mt-3">
-                    <p className="font-semibold text-red-800 mb-2">
-                      Failed to add {message.details.failedCount} products:
+                {message.details?.summary && (
+                  <div className="mt-3 pt-3 border-t border-green-200">
+                    <p className="text-sm text-green-700">
+                      📊 <strong>Summary:</strong> {message.details.summary.loaded} loaded, {message.details.summary.validated} validated, {message.details.summary.failed} failed
                     </p>
-                    <ul className="text-sm text-red-700 space-y-1">
+                  </div>
+                )}
+                {message.details && message.details.failedProducts && message.details.failedProducts.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-red-200">
+                    <p className="font-semibold text-red-800 mb-2">
+                      ⚠️ Failed to add {message.details.failedProducts.length} products:
+                    </p>
+                    <ul className="text-sm text-red-700 space-y-2 max-h-60 overflow-y-auto">
                       {message.details.failedProducts.map((item, idx) => (
-                        <li key={idx}>
-                          <strong>{item.product}</strong>: {item.reason}
+                        <li key={idx} className="border-b border-red-100 pb-2 last:border-0">
+                          <strong>{item.product}</strong> {item.row && `(Row ${item.row})`}
+                          {item.errors && (
+                            <ul className="ml-4 mt-1 list-disc list-inside">
+                              {item.errors.map((error, errIdx) => (
+                                <li key={errIdx}>{error}</li>
+                              ))}
+                            </ul>
+                          )}
+                          {item.reason && !item.errors && (
+                            <div className="ml-4 mt-1">{item.reason}</div>
+                          )}
                         </li>
                       ))}
                     </ul>

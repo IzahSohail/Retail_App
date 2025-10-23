@@ -1,16 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api';
 import { Button } from '../components/ui/button';
-import { Link } from 'react-router-dom';
-import { FileText, Upload, BarChart3, CheckCircle, Clock, XCircle } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { FileText, Upload, BarChart3, CheckCircle, Clock, XCircle, ShoppingBag, LogOut } from 'lucide-react';
 import VerifyBusiness from './VerifyBusiness';
 import UploadCatalog from './UploadCatalog';
 
 export default function BusinessDashboard() {
+  const navigate = useNavigate();
   const [businessInfo, setBusinessInfo] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('verify'); // verify, catalog, analytics
+  const backendBase = process.env.REACT_APP_BACKEND_BASE || 'http://localhost:3001';
 
   useEffect(() => {
     fetchBusinessData();
@@ -157,6 +159,24 @@ export default function BusinessDashboard() {
                   <BarChart3 className="w-5 h-5" />
                   <span>Analytics</span>
                   {!isVerified && <span className="text-xs">🔒</span>}
+                </button>
+
+                <div className="border-t border-gray-200 my-4"></div>
+
+                <button
+                  onClick={() => navigate('/')}
+                  className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-gray-700 hover:bg-gray-50"
+                >
+                  <ShoppingBag className="w-5 h-5" />
+                  <span>Browse Marketplace</span>
+                </button>
+
+                <button
+                  onClick={() => window.location.href = `${backendBase}/logout`}
+                  className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-red-600 hover:bg-red-50"
+                >
+                  <LogOut className="w-5 h-5" />
+                  <span>Logout</span>
                 </button>
               </nav>
             </div>

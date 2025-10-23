@@ -57,6 +57,7 @@ export default function ProductCard({ p, user, onLogin, onCartUpdate }) {
 
   const isOwnProduct = user && user.sub === p.sellerId;
   const isOutOfStock = stock <= 0;
+  const isBusinessUser = user && user.role === 'BUSINESS';
 
   return (
     <Card className="group hover:shadow-xl transition-all duration-300 bg-white/80 backdrop-blur-sm border-purple-100 overflow-hidden">
@@ -86,7 +87,12 @@ export default function ProductCard({ p, user, onLogin, onCartUpdate }) {
         </div>
 
         {/* Badges */}
-        <div className="absolute top-3 left-3 flex gap-2">
+        <div className="absolute top-3 left-3 flex gap-2 flex-wrap max-w-[calc(100%-3rem)]">
+          {p.isB2B && (
+            <Badge className="bg-blue-600 text-white hover:bg-blue-700">
+              Business Seller
+            </Badge>
+          )}
           {p.priceMinor === 0 && (
             <Badge className="bg-green-500 text-white hover:bg-green-600">
               FREE
@@ -126,7 +132,15 @@ export default function ProductCard({ p, user, onLogin, onCartUpdate }) {
 
         {/* Action Button */}
         <div className="space-y-2">
-          {isOwnProduct ? (
+          {isBusinessUser ? (
+            <Button 
+              disabled 
+              className="w-full bg-blue-100 text-blue-600 hover:bg-blue-100"
+              size="sm"
+            >
+              Browse Only
+            </Button>
+          ) : isOwnProduct ? (
             <Button 
               disabled 
               className="w-full bg-gray-100 text-gray-500 hover:bg-gray-100"
@@ -157,6 +171,11 @@ export default function ProductCard({ p, user, onLogin, onCartUpdate }) {
 
         {/* Metadata */}
         <div className="mt-3 pt-3 border-t border-gray-100">
+          {p.isB2B && p.businessName && (
+            <p className="text-xs text-blue-600 font-medium mb-1">
+              🏢 {p.businessName}
+            </p>
+          )}
           <p className="text-xs text-gray-400">
             Listed {new Date(p.createdAt).toLocaleDateString()}
           </p>
