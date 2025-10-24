@@ -93,7 +93,7 @@ export default function UploadCatalog({ businessInfo }) {
             <li><strong>title</strong> - Product name</li>
             <li><strong>description</strong> - Product description</li>
             <li><strong>price</strong> - Price in AED (e.g., 99.99)</li>
-            <li><strong>category</strong> - Category name (as of now we only sell items within categories: Electronics, Books, Furniture, Clothing, Sports, Other)</li>
+            <li><strong>category</strong> - Category name (as of now we only sell items within categories: Electronics, Books, Furniture, Clothing)</li>
             <li><strong>stock</strong> - Available quantity (e.g., 10)</li>
             <li><strong>imageUrl</strong> (optional) - Product image URL</li>
           </ul>

@@ -142,7 +142,8 @@ async function main() {
       priceMinor: 15000, 
       currency: 'AED',
       stock: 1,
-      categoryId: furnitureCategory.id
+      categoryId: furnitureCategory.id,
+      sellerId: testSeller.id
     },
     {
       title: 'Mini Fridge - Excellent Condition',
@@ -150,7 +151,8 @@ async function main() {
       priceMinor: 25000, 
       currency: 'AED',
       stock: 1,
-      categoryId: furnitureCategory.id
+      categoryId: furnitureCategory.id,
+      sellerId: testSeller.id
     },
 
     // Free items
@@ -175,8 +177,22 @@ async function main() {
   ];
 
   for (const productData of products) {
+    const { categoryId, sellerId, ...productFields } = productData;
+    const createData = {
+      ...productFields,
+      category: {
+        connect: { id: categoryId }
+      }
+    };
+    
+    if (sellerId) {
+      createData.seller = {
+        connect: { id: sellerId }
+      };
+    }
+    
     await prisma.product.create({
-      data: productData
+      data: createData
     });
   }
 

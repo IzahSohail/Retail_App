@@ -197,9 +197,12 @@ router.post('/catalog', requiresAuth(), upload.single('catalog'), async (req, re
     
     // Get all categories from database
     const dbCategories = await prisma.category.findMany();
+    console.log(` [ETL] Found ${dbCategories.length} categories in database`);
     
     // Run ETL pipeline
+    console.log(` [ETL] Starting ETL pipeline...`);
     const etlResult = await runETL(req.file.buffer, req.file.mimetype, dbCategories);
+    console.log(` [ETL] ETL pipeline completed`);
     
     if (!etlResult.success) {
       console.error(` [ETL] Pipeline failed: ${etlResult.error}`);
@@ -218,11 +221,15 @@ router.post('/catalog', requiresAuth(), upload.single('catalog'), async (req, re
     console.log(` [ETL] Failed: ${etlResult.results.failed} products`);
     
     // LOAD PHASE: Insert valid products into database
+    console.log(` [ETL LOAD] Starting database operations for ${validProducts.length} products...`);
     
     const addedProducts = [];
     const loadFailedProducts = [];
     
-    for (const productData of validProducts) {
+    for (let i = 0; i < validProducts.length; i++) {
+      const productData = validProducts[i];
+      console.log(` [ETL LOAD] Processing product ${i + 1}/${validProducts.length}: ${productData.title}`);
+      
       try {
         const newProduct = await prisma.product.create({
           data: {
@@ -233,6 +240,7 @@ router.post('/catalog', requiresAuth(), upload.single('catalog'), async (req, re
         });
         
         addedProducts.push(newProduct);
+        console.log(` [ETL LOAD] Successfully created product: ${newProduct.id}`);
       } catch (err) {
         console.error(` [ETL LOAD] Failed to insert product:`, err);
         loadFailedProducts.push({

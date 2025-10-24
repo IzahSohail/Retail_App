@@ -1,0 +1,122 @@
+[
+  {
+    "title": "MacBook Pro 16-inch M2",
+    "description": "Apple MacBook Pro 16-inch with M2 chip, 16GB RAM, 512GB SSD. Perfect for students and professionals. Excellent condition, barely used.",
+    "price": 2500.00,
+    "category": "electronics",
+    "stock": 2,
+    "imageUrl": "https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=500"
+  },
+  {
+    "title": "Calculus Textbook - Stewart 8th Edition",
+    "description": "Essential Calculus: Early Transcendentals by James Stewart, 8th Edition. Used but in good condition with minimal highlighting. Perfect for MATH 101-102 courses.",
+    "price": 85.50,
+    "category": "textbooks",
+    "stock": 1,
+    "imageUrl": "https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=500"
+  },
+  {
+    "title": "Gaming Chair - Ergonomic Office Chair",
+    "description": "High-quality ergonomic gaming chair with lumbar support, adjustable height, and 360-degree swivel. Black leather with red accents. Barely used, like new condition.",
+    "price": 180.00,
+    "category": "furniture",
+    "stock": 1,
+    "imageUrl": "https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=500"
+  },
+  {
+    "title": "Nike Air Force 1 White",
+    "description": "Classic Nike Air Force 1 sneakers in white. Size 10.5, worn only a few times. Clean and in excellent condition. Original box included.",
+    "price": 95.00,
+    "category": "clothing",
+    "stock": 1,
+    "imageUrl": "https://images.unsplash.com/photo-1549298916-b41d501d3772?w=500"
+  },
+  {
+    "title": "iPhone 14 Pro 128GB",
+    "description": "Apple iPhone 14 Pro in Space Black, 128GB storage. Unlocked, excellent condition with original charger and case. No scratches or damage.",
+    "price": 850.00,
+    "category": "electronics",
+    "stock": 1,
+    "imageUrl": "https://images.unsplash.com/photo-1592750475338-74b7b21085ab?w=500"
+  },
+  {
+    "title": "Organic Chemistry Textbook",
+    "description": "Organic Chemistry by David Klein, 3rd Edition. Comprehensive textbook for organic chemistry courses. Some highlighting but all pages intact and readable.",
+    "price": 120.00,
+    "category": "textbooks",
+    "stock": 1,
+    "imageUrl": "https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=500"
+  },
+  {
+    "title": "Study Desk - White Wooden",
+    "description": "Compact white wooden study desk with drawer. Perfect for dorm rooms or small apartments. Easy assembly, good condition with minor wear.",
+    "price": 75.00,
+    "category": "furniture",
+    "stock": 1,
+    "imageUrl": "https://images.unsplash.com/photo-1506439773649-6e0eb8cfb237?w=500"
+  },
+  {
+    "title": "Vintage Denim Jacket",
+    "description": "Classic vintage denim jacket, size M. Light blue wash with some natural fading. Perfect for casual wear. Good condition with minor wear.",
+    "price": 45.00,
+    "category": "clothing",
+    "stock": 1,
+    "imageUrl": "https://images.unsplash.com/photo-1551028719-00167b16eac5?w=500"
+  },
+  {
+    "title": "iPad Air 5th Generation",
+    "description": "Apple iPad Air 5th generation, 64GB WiFi, Space Gray. Excellent condition with screen protector applied. Includes Apple Pencil (2nd generation).",
+    "price": 550.00,
+    "category": "electronics",
+    "stock": 1,
+    "imageUrl": "https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?w=500"
+  },
+  {
+    "title": "Physics Textbook - Halliday & Resnick",
+    "description": "Fundamentals of Physics by Halliday, Resnick, and Walker, 10th Edition. Comprehensive physics textbook for university courses. Good condition with some notes.",
+    "price": 110.00,
+    "category": "textbooks",
+    "stock": 1,
+    "imageUrl": "https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=500"
+  },
+  {
+    "title": "Office Chair - Mesh Back",
+    "description": "Ergonomic office chair with mesh back and lumbar support. Adjustable height and armrests. Black color, good condition with minor wear.",
+    "price": 125.00,
+    "category": "furniture",
+    "stock": 1,
+    "imageUrl": "https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=500"
+  },
+  {
+    "title": "Hoodie - University Branded",
+    "description": "University branded hoodie, size L. Navy blue with university logo. Soft cotton blend, perfect condition. Great for campus spirit!",
+    "price": 35.00,
+    "category": "clothing",
+    "stock": 2,
+    "imageUrl": "https://images.unsplash.com/photo-1556821840-3a63f95609a4?w=500"
+  },
+  {
+    "title": "Wireless Bluetooth Headphones",
+    "description": "Sony WH-1000XM4 noise-canceling wireless headphones. Excellent sound quality and battery life. Black color, like new condition with original case.",
+    "price": 200.00,
+    "category": "electronics",
+    "stock": 1,
+    "imageUrl": "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=500"
+  },
+  {
+    "title": "Linear Algebra Textbook",
+    "description": "Linear Algebra and Its Applications by David Lay, 5th Edition. Essential for mathematics and engineering students. Good condition with minimal highlighting.",
+    "price": 90.00,
+    "category": "textbooks",
+    "stock": 1,
+    "imageUrl": "https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=500"
+  },
+  {
+    "title": "Bookshelf - 5-Tier Wooden",
+    "description": "5-tier wooden bookshelf, natural wood finish. Perfect for organizing textbooks and study materials. Easy assembly, good condition.",
+    "price": 60.00,
+    "category": "furniture",
+    "stock": 1,
+    "imageUrl": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=500"
+  }
+]

@@ -2,20 +2,20 @@ const VALIDATION_PATTERNS = {
   // Product title: 3-200 characters, alphanumeric with spaces and common punctuation
   title: /^[a-zA-Z0-9\s\-_,.'&()]+$/,
   
-  // Description: 10-2000 characters, allows most characters
-  description: /^[\s\S]{10,2000}$/,
+  // Description: 10-2000 characters
+  description: /^.{10,2000}$/,
   
-  // Price: Positive number with optional decimals (e.g., 99, 99.99, 0.50)
+  // Price: Positive number with optional decimals
   price: /^\d+(\.\d{1,2})?$/,
   
   // Category: Alphanumeric with spaces, hyphens, underscores
   category: /^[a-zA-Z0-9\s\-_]+$/,
   
-  // Stock: Positive integer (0 or more)
+  // Stock: Positive integer
   stock: /^\d+$/,
   
-  // Image URL (optional): Valid URL format
-  imageUrl: /^(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?$/i
+  // Image URL as this will be optional: Simple URL validation
+  imageUrl: /^https?:\/\/.+/
 };
 
 // Valid category names (case-insensitive)
@@ -198,20 +198,22 @@ export function validateAndTransformProduct(product, categoryMap) {
   }
   
   //CATEGORY VALIDATION 
+  console.log(` [ETL VALIDATE] Validating category...`);
   if (!product.category || typeof product.category !== 'string') {
     errors.push('Category is required and must be a string');
-  } else if (!VALIDATION_PATTERNS.category.test(product.category)) {
-    errors.push('Category contains invalid characters');
   } else {
     const categoryName = product.category.toLowerCase().trim();
+    console.log(` [ETL VALIDATE] Category name: "${categoryName}"`);
     
-    // Fuzzy match category name
+    // Simple category matching without regex
     const matchedCategory = matchCategory(categoryName);
+    console.log(` [ETL VALIDATE] Matched category: "${matchedCategory}"`);
     
     if (!matchedCategory) {
       errors.push(`Category "${product.category}" is not valid. Must be one of: ${VALID_CATEGORIES.join(', ')}`);
     } else {
       const categoryId = categoryMap[matchedCategory];
+      console.log(` [ETL VALIDATE] Category ID: "${categoryId}"`);
       if (!categoryId) {
         errors.push(`Category "${matchedCategory}" not found in database`);
       } else {
@@ -219,23 +221,30 @@ export function validateAndTransformProduct(product, categoryMap) {
       }
     }
   }
+  console.log(` [ETL VALIDATE] Category validation complete`);
   
   // STOCK VALIDATION 
+  console.log(` [ETL VALIDATE] Validating stock...`);
   const stockStr = String(product.stock).trim();
+  console.log(` [ETL VALIDATE] Stock string: "${stockStr}"`);
   if (!VALIDATION_PATTERNS.stock.test(stockStr)) {
     errors.push('Stock must be a non-negative integer (e.g., 10)');
   } else {
     const stock = parseInt(stockStr, 10);
+    console.log(` [ETL VALIDATE] Parsed stock: ${stock}`);
     if (stock < 0 || stock > 999999) {
       errors.push('Stock must be between 0 and 999999');
     } else {
       transformed.stock = stock;
     }
   }
+  console.log(` [ETL VALIDATE] Stock validation complete`);
   
   // IMAGE URL VALIDATION (optional)
+  console.log(` [ETL VALIDATE] Validating image URL...`);
   if (product.imageUrl || product.imageurl) {
     const imageUrl = (product.imageUrl || product.imageurl).trim();
+    console.log(` [ETL VALIDATE] Image URL: "${imageUrl}"`);
     if (imageUrl) {
       if (!VALIDATION_PATTERNS.imageUrl.test(imageUrl)) {
         errors.push('Image URL is not a valid URL format');
@@ -246,6 +255,7 @@ export function validateAndTransformProduct(product, categoryMap) {
   } else {
     transformed.imageUrl = null;
   }
+  console.log(` [ETL VALIDATE] Image URL validation complete`);
   
   return {
     valid: errors.length === 0,
@@ -263,25 +273,33 @@ export function validateAndTransformProduct(product, categoryMap) {
 function matchCategory(categoryName) {
   const normalized = categoryName.toLowerCase().trim();
   
-  // category patterns with regex for flexible matching
-  const categoryPatterns = {
-    electronics: /^electro?n(ic)?s?$/i,
-    textbooks: /^(text)?book?s?$/i,
-    furniture: /^furniture?$/i,
-    clothing: /^cloth(ing|es)?$/i,
-    sports: /^sports?$/i,
-    other: /^other$/i
-  };
-  
   // Try exact match first
   if (VALID_CATEGORIES.includes(normalized)) {
     return normalized;
   }
   
-  // Try pattern matching
-  for (const [category, pattern] of Object.entries(categoryPatterns)) {
-    if (pattern.test(normalized)) {
-      return category;
+  // Simple string matching for common variations
+  const categoryMappings = {
+    'electronic': 'electronics',
+    'electron': 'electronics',
+    'textbook': 'textbooks',
+    'book': 'textbooks',
+    'books': 'textbooks',
+    'cloth': 'clothing',
+    'clothes': 'clothing',
+    'furnish': 'furniture',
+    'sport': 'sports'
+  };
+  
+  // Check direct mappings
+  if (categoryMappings[normalized]) {
+    return categoryMappings[normalized];
+  }
+  
+  // Check if it starts with any valid category
+  for (const validCategory of VALID_CATEGORIES) {
+    if (normalized.startsWith(validCategory) || validCategory.startsWith(normalized)) {
+      return validCategory;
     }
   }
   
@@ -320,6 +338,7 @@ export async function runETL(fileBuffer, mimeType, dbCategories) {
   };
   
   try {
+    console.log(` [ETL] Starting extraction...`);
     // extract
     let rawProducts = [];
     if (mimeType === 'text/csv') {
@@ -331,14 +350,47 @@ export async function runETL(fileBuffer, mimeType, dbCategories) {
     }
     
     results.extracted = rawProducts.length;
+    console.log(` [ETL] Extracted ${rawProducts.length} products`);
     
     // build category map
+    console.log(` [ETL] Building category map...`);
+    console.log(` [ETL] Database categories:`, dbCategories.map(c => ({ name: c.name, id: c.id })));
     const categoryMap = buildCategoryMap(dbCategories);
+    console.log(` [ETL] Category map built with ${Object.keys(categoryMap).length} categories:`, Object.keys(categoryMap));
     
     //TRANSFORM & VALIDATE
+    console.log(` [ETL] Starting validation...`);
     for (let i = 0; i < rawProducts.length; i++) {
       const raw = rawProducts[i];
-      const validation = validateAndTransformProduct(raw, categoryMap);
+      console.log(` [ETL] Validating product ${i + 1}/${rawProducts.length}: "${raw.title}" (category: "${raw.category}")`);
+      console.log(` [ETL] Starting validation for product ${i + 1}...`);
+      
+      // Add timeout to prevent hanging
+      const validationPromise = new Promise((resolve) => {
+        try {
+          const result = validateAndTransformProduct(raw, categoryMap);
+          resolve(result);
+        } catch (error) {
+          resolve({
+            valid: false,
+            transformed: null,
+            errors: [`Validation error: ${error.message}`]
+          });
+        }
+      });
+      
+      const timeoutPromise = new Promise((resolve) => {
+        setTimeout(() => {
+          resolve({
+            valid: false,
+            transformed: null,
+            errors: ['Validation timeout - product validation took too long']
+          });
+        }, 5000); // 5 second timeout
+      });
+      
+      const validation = await Promise.race([validationPromise, timeoutPromise]);
+      console.log(` [ETL] Product ${i + 1} validation completed successfully`);
       
       if (validation.valid) {
         results.validProducts.push(validation.transformed);
@@ -352,6 +404,8 @@ export async function runETL(fileBuffer, mimeType, dbCategories) {
         results.failed++;
       }
     }
+    
+    console.log(` [ETL] Validation completed: ${results.validated} valid, ${results.failed} failed`);
     
     return {
       success: true,
