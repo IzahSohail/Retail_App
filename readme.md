@@ -1,22 +1,22 @@
-# Retail App 🛍️
+# Retail App
 
-A university marketplace app where students can upload, buy, sell, or donate items such as books, clothes, and electronics.  
-Built with **React (frontend)**, **Node.js + Express (backend)**, **PostgreSQL (database)**, and **Prisma (ORM)**.  
-Authentication is handled via **Auth0**, and product images are stored in **Supabase**.
+A university marketplace app where students can upload, buy, sell, or donate items such as books, clothes, and electronics. 
+ 
+Built with React (frontend), Node.js + Express (backend), PostgreSQL (database), and Prisma (ORM).  
+Authentication is handled via Auth0, and product images are stored in Supabase.
 
----
-
-## 🚀 Features
-- User authentication with **Auth0**
+## Features
+- User authentication with Auth0
 - Upload and manage product listings
 - Categorized browsing of items
 - Cart and checkout flow with mock payment processing
+- Business catalog upload (CSV/JSON)
+- Flash sales with admin controls
+- Role-based access (USER, BUSINESS, ADMIN)
 - PostgreSQL + Prisma backend
 - Supabase storage for product images
 
----
-
-## 🛠️ Tech Stack
+## Tech Stack
 - **Frontend:** React 18, Tailwind CSS, Axios  
 - **Backend:** Node.js, Express, Prisma ORM  
 - **Database:** PostgreSQL  
@@ -25,7 +25,7 @@ Authentication is handled via **Auth0**, and product images are stored in **Supa
 
 ---
 
-##  Setup Instructions
+## Setup Instructions
 
 ### 1. Clone the Repository
 ```bash
@@ -62,8 +62,8 @@ SUPABASE_BUCKET="products"
 # Run Prisma migrations
 npx prisma migrate dev
 
-# Seed the database with sample data
-npm run seed
+# optional : Seed the database with sample data
+cd backend && node src/seed.js
 ```
 
 ### 5. Run the Application
@@ -78,21 +78,35 @@ npm run dev:frontend # Frontend on http://localhost:3000
 
 ---
 
-## 🧪 Testing
+## Testing
 
-Run the test suite:
+### Unit Tests
 ```bash
-# Run all tests from root directory
-npx jest tests/unit/payment.test.js tests/unit/priceCalculation.test.js tests/integration/cart.test.js
+# Run cart integration tests
+npm run test:cart
+
+# Run all tests
+npm test
 ```
 
-**Test Coverage:**
--  2 Unit Tests (payment processing, price calculations)
--  1 Integration Test (cart operations with database)
+### Performance Tests
+```bash
+# High-volume upload test
+npm run test:performance
+
+# Flash sales surge test
+npm run test:flashsales
+```
+
+### Test Coverage
+- Unit Tests: Payment processing, price calculations
+- Integration Tests: Cart operations with mock database
+- Performance Tests: High-volume uploads, flash sales concurrency
+- flash sale tests
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 Retail_App/
@@ -100,42 +114,46 @@ Retail_App/
 │   ├── src/
 │   │   ├── server.js  # Main server file
 │   │   ├── db.js      # Prisma client
-│   │   └── seed.js    # Database seeder
+│   │   ├── seed.js    # Database seeder
+│   │   ├── routes/    # API routes
+│   │   └── services/  # service layer
 │   └── package.json
 ├── frontend/          # React application
 │   ├── src/
 │   │   ├── App.js     # Main React component
-│   │   └── components/
+│   │   ├── admin/     # Admin panel components
+│   │   └── business_panel/ # Business features
 │   └── package.json
 ├── prisma/
 │   ├── schema.prisma  # Database schema
 │   └── migrations/    # Database migrations
 ├── tests/             # Test files
 │   ├── unit/          # Unit tests
-│   └── integration/   # Integration tests
+│   ├── integration/   # Integration tests
+│   ├── performance/   # Performance tests
+│   └── flash_sales/   # Flash sales tests
+├── sample_data/       # Sample catalog files
 └── package.json       # Root package.json
 ```
 
----
-
-## 🔧 Key Features Explained
+## Key Features
 
 - **Authentication:** Secure login with Auth0
-- **Product Management:** Upload, edit, delete listings
+- **Product Management:** Upload, edit, delete listings as a regular user
 - **Shopping Cart:** Add items, manage quantities, checkout
-- **Payment Processing:** Mock payment system (always approves)
+- **Business Features:** Catalog upload (CSV/JSON), verification for your business
+- **Admin Panel:** business verification, flash sales management, audit logs
+- **Flash Sales:** Time-limited discounts with admin controls
+- **Payment Processing:** Mock payment system
 - **Image Storage:** Product photos stored in Supabase
-- **Database:** PostgreSQL with Prisma ORM for type safety
+- **Database:** PostgreSQL with Prisma ORM
 
----
-
-## 🚀 Usage
+## Usage
 
 1. **Login** with Auth0
 2. **Browse Products** on the home page
 3. **Add to Cart** or buy items from other students
 4. **Upload Your Items** using the "List Item" button
-5. **Manage Your Listings** in "My Listings"
-6. **Complete Purchase** through the cart checkout flow
-
----
+5. **Business Users:** Upload product catalogs via CSV/JSON
+6. **Admin Users:** Manage user verification and flash sales
+7. **Complete Purchase** through the cart checkout flow
