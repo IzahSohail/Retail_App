@@ -25,7 +25,7 @@ Authentication is handled via **Auth0**, and product images are stored in **Supa
 
 ---
 
-## 📦 Setup Instructions
+##  Setup Instructions
 
 ### 1. Clone the Repository
 ```bash
@@ -87,8 +87,8 @@ npx jest tests/unit/payment.test.js tests/unit/priceCalculation.test.js tests/in
 ```
 
 **Test Coverage:**
-- ✅ 2 Unit Tests (payment processing, price calculations)
-- ✅ 1 Integration Test (cart operations with database)
+-  2 Unit Tests (payment processing, price calculations)
+-  1 Integration Test (cart operations with database)
 
 ---
 

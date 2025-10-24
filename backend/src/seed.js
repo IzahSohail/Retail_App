@@ -4,7 +4,19 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('🌱 Seeding database...');
+  console.log(' Seeding database...');
+
+  // Create a test seller user
+  const testSeller = await prisma.user.upsert({
+    where: { email: 'seller@test.com' },
+    update: {},
+    create: {
+      email: 'seller@test.com',
+      name: 'Test Seller',
+      auth0Id: 'auth0|test-seller-001',
+      role: 'USER'
+    }
+  });
 
   // Create categories
   const textbooksCategory = await prisma.category.upsert({
@@ -52,7 +64,8 @@ async function main() {
       priceMinor: 8500, // $85.00
       currency: 'AED',
       stock: 1,
-      categoryId: textbooksCategory.id
+      categoryId: textbooksCategory.id,
+      sellerId: testSeller.id
     },
     {
       title: 'Calculus: Early Transcendentals',
@@ -60,7 +73,8 @@ async function main() {
       priceMinor: 12000, 
       currency: 'AED',
       stock: 1,
-      categoryId: textbooksCategory.id
+      categoryId: textbooksCategory.id,
+      sellerId: testSeller.id
     },
     {
       title: 'Biology Lab Manual',
@@ -68,7 +82,8 @@ async function main() {
       priceMinor: 3500, 
       currency: 'AED',
       stock: 2,
-      categoryId: textbooksCategory.id
+      categoryId: textbooksCategory.id,
+      sellerId: testSeller.id
     },
 
     // Electronics
@@ -78,7 +93,8 @@ async function main() {
       priceMinor: 275000,
       currency: 'AED',
       stock: 1,
-      categoryId: electronicsCategory.id
+      categoryId: electronicsCategory.id,
+      sellerId: testSeller.id
     },
     {
       title: 'iPad Air with Apple Pencil',
@@ -86,7 +102,8 @@ async function main() {
       priceMinor: 185000, 
       currency: 'AED',
       stock: 1,
-      categoryId: electronicsCategory.id
+      categoryId: electronicsCategory.id,
+      sellerId: testSeller.id
     },
     {
       title: 'Scientific Calculator TI-84',
@@ -94,7 +111,8 @@ async function main() {
       priceMinor: 4500, 
       currency: 'AED',
       stock: 3,
-      categoryId: electronicsCategory.id
+      categoryId: electronicsCategory.id,
+      sellerId: testSeller.id
     },
 
     // Clothing
@@ -104,7 +122,8 @@ async function main() {
       priceMinor: 2800, 
       currency: 'AED',
       stock: 1,
-      categoryId: clothingCategory.id
+      categoryId: clothingCategory.id,
+      sellerId: testSeller.id
     },
     {
       title: 'Winter Jacket - Large',
@@ -112,7 +131,8 @@ async function main() {
       priceMinor: 3200, 
       currency: 'AED',
       stock: 1,
-      categoryId: clothingCategory.id
+      categoryId: clothingCategory.id,
+      sellerId: testSeller.id
     },
 
     // Furniture
@@ -140,7 +160,8 @@ async function main() {
       priceMinor: 0, 
       currency: 'AED',
       stock: 5,
-      categoryId: textbooksCategory.id
+      categoryId: textbooksCategory.id,
+      sellerId: testSeller.id
     },
     {
       title: 'Free Desk Lamp',
@@ -148,7 +169,8 @@ async function main() {
       priceMinor: 0, 
       currency: 'AED',
       stock: 1,
-      categoryId: furnitureCategory.id
+      categoryId: furnitureCategory.id,
+      sellerId: testSeller.id
     }
   ];
 
@@ -158,13 +180,13 @@ async function main() {
     });
   }
 
-  console.log('✅ Database seeded successfully!');
+  console.log(' Database seeded successfully!');
   console.log(`Created ${products.length} products across 4 categories`);
 }
 
 main()
   .catch((e) => {
-    console.error('❌ Seeding failed:', e);
+    console.error(' Seeding failed:', e);
     process.exit(1);
   })
   .finally(async () => {

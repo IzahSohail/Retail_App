@@ -9,8 +9,8 @@ const TEST_PRODUCT_ID = 'concurrency-test-product';
 
 async function runConcurrencyTest() {
   try {
-    console.log('🚀 Starting Concurrency Integration Test\n');
-    console.log('📝 This test sends 10 concurrent POST requests to /api/purchase\n');
+    console.log(' Starting Concurrency Integration Test\n');
+    console.log(' This test sends 10 concurrent POST requests to /api/purchase\n');
 
     // 1. Fetch the test product
     const product = await prisma.product.findUnique({
@@ -18,7 +18,7 @@ async function runConcurrencyTest() {
     });
 
     if (!product) {
-      throw new Error('❌ Test product not found. Run: node tests/concurrency/setup-concurrency-test.js');
+      throw new Error(' Test product not found. Run: node tests/concurrency/setup-concurrency-test.js');
     }
 
     // 2. Fetch seller
@@ -38,10 +38,10 @@ async function runConcurrencyTest() {
     });
 
     if (buyers.length !== 10) {
-      throw new Error(`❌ Expected 10 buyers, found ${buyers.length}. Run setup script first.`);
+      throw new Error(` Expected 10 buyers, found ${buyers.length}. Run setup script first.`);
     }
 
-    console.log('✅ Test Setup Complete:');
+    console.log(' Test Setup Complete:');
     console.log(`   Product: ${product.title} (ID: ${product.id})`);
     console.log(`   Seller: ${seller.email}`);
     console.log(`   Buyers: ${buyers.length} test users\n`);
@@ -55,13 +55,13 @@ async function runConcurrencyTest() {
       data: { stock: initialStock, active: true }
     });
 
-    console.log('📦 Test Scenario:');
+    console.log(' Test Scenario:');
     console.log(`   Initial Stock: ${initialStock}`);
     console.log(`   Concurrent Requests: ${buyers.length}`);
     console.log(`   Expected Success: 5`);
     console.log(`   Expected Failure: 5\n`);
 
-    console.log('💥 Launching 10 concurrent POST /api/purchase requests...\n');
+    console.log(' Launching 10 concurrent POST /api/purchase requests...\n');
 
     // 5. Send 10 concurrent requests
     const purchasePromises = buyers.map((buyer, index) => {
@@ -82,20 +82,20 @@ async function runConcurrencyTest() {
     });
 
     console.log('\n' + '='.repeat(60));
-    console.log('📊 TEST RESULTS');
+    console.log(' TEST RESULTS');
     console.log('='.repeat(60));
-    console.log(`✅ Successful purchases: ${successful.length}`);
-    console.log(`❌ Failed purchases: ${failed.length}`);
-    console.log(`⚠️  Errors: ${errors.length}`);
+    console.log(` Successful purchases: ${successful.length}`);
+    console.log(` Failed purchases: ${failed.length}`);
+    console.log(`  Errors: ${errors.length}`);
     console.log();
-    console.log('📦 Stock Status:');
+    console.log(' Stock Status:');
     console.log(`   Initial: ${initialStock}`);
     console.log(`   Final: ${finalProduct.stock}`);
     console.log(`   Sold: ${initialStock - finalProduct.stock}`);
 
     // Log failures
     if (failed.length > 0) {
-      console.log('\n❌ Failed Purchase Reasons:');
+      console.log('\n Failed Purchase Reasons:');
       failed.slice(0, 3).forEach((result, idx) => {
         console.log(`   ${idx + 1}. ${result.value.error}`);
       });
@@ -115,7 +115,7 @@ async function runConcurrencyTest() {
 
     console.log('\n' + '='.repeat(60));
     if (passed) {
-      console.log('✅ TEST PASSED: Concurrency control working correctly!');
+      console.log(' TEST PASSED: Concurrency control working correctly!');
       console.log('='.repeat(60));
       console.log('✓ Exactly 5 requests succeeded');
       console.log('✓ Exactly 5 requests failed (insufficient stock)');
@@ -124,7 +124,7 @@ async function runConcurrencyTest() {
       console.log('✓ Atomic stock control verified\n');
       process.exit(0);
     } else {
-      console.log('❌ TEST FAILED: Concurrency issue detected!');
+      console.log(' TEST FAILED: Concurrency issue detected!');
       console.log('='.repeat(60));
       console.log(`Expected: 5 successful, got ${successful.length}`);
       console.log(`Expected: 5 failed, got ${failed.length}`);
@@ -134,7 +134,7 @@ async function runConcurrencyTest() {
     }
 
   } catch (error) {
-    console.error('\n❌ Test Error:', error.message);
+    console.error('\n Test Error:', error.message);
     process.exit(1);
   } finally {
     await prisma.$disconnect();
@@ -162,11 +162,11 @@ async function sendPurchaseRequest(buyer, productId, quantity, buyerNumber) {
       });
 
     if (response.status === 200 && response.body.success) {
-      console.log(`   [${buyerNumber}] ✅ Success (HTTP 200)`);
+      console.log(`   [${buyerNumber}]  Success (HTTP 200)`);
       return { success: true, data: response.body };
     } else {
       const errorMsg = response.body.error || `HTTP ${response.status}`;
-      console.log(`   [${buyerNumber}] ❌ Failed: ${errorMsg}`);
+      console.log(`   [${buyerNumber}]  Failed: ${errorMsg}`);
       return { success: false, error: errorMsg };
     }
 

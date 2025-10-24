@@ -91,7 +91,7 @@ router.post('/verify', requiresAuth(), upload.fields([
       
       if (!bucketExists) {
         await supabase.storage.createBucket(bucketName, {
-          public: false
+          public: true // Changed to public so we can view the PDFs
         });
       }
       
@@ -109,11 +109,13 @@ router.post('/verify', requiresAuth(), upload.fields([
           
         if (error) throw error;
         
-        const { data: urlData } = supabase.storage
+        // Use signed URL with 1 year expiry
+        const { data: urlData, error: urlError } = await supabase.storage
           .from(bucketName)
-          .getPublicUrl(filePath);
-        
-        tradeLicenseUrl = urlData.publicUrl;
+          .createSignedUrl(filePath, 31536000); // 1 year in seconds
+          
+        if (urlError) throw urlError;
+        tradeLicenseUrl = urlData.signedUrl;
       }
       
       // Upload establishment card
@@ -130,11 +132,12 @@ router.post('/verify', requiresAuth(), upload.fields([
           
         if (error) throw error;
         
-        const { data: urlData } = supabase.storage
+        const { data: urlData, error: urlError } = await supabase.storage
           .from(bucketName)
-          .getPublicUrl(filePath);
-        
-        establishmentCardUrl = urlData.publicUrl;
+          .createSignedUrl(filePath, 31536000); 
+          
+        if (urlError) throw urlError;
+        establishmentCardUrl = urlData.signedUrl;
       }
     }
     
@@ -187,12 +190,10 @@ router.post('/catalog', requiresAuth(), upload.single('catalog'), async (req, re
     
     const b2bId = user.b2b.id;
     
-    // ============================================================================
     // RUN ETL PIPELINE (Extract, Transform, Load)
-    // ============================================================================
     
-    console.log(`📦 [ETL] Starting catalog upload for business: ${user.b2b.businessName || user.email}`);
-    console.log(`📦 [ETL] File type: ${req.file.mimetype}, Size: ${req.file.size} bytes`);
+    console.log(` [ETL] Starting catalog upload for business: ${user.b2b.businessName || user.email}`);
+    console.log(` [ETL] File type: ${req.file.mimetype}, Size: ${req.file.size} bytes`);
     
     // Get all categories from database
     const dbCategories = await prisma.category.findMany();
@@ -201,7 +202,7 @@ router.post('/catalog', requiresAuth(), upload.single('catalog'), async (req, re
     const etlResult = await runETL(req.file.buffer, req.file.mimetype, dbCategories);
     
     if (!etlResult.success) {
-      console.error(`❌ [ETL] Pipeline failed: ${etlResult.error}`);
+      console.error(` [ETL] Pipeline failed: ${etlResult.error}`);
       return res.status(400).json({ 
         error: etlResult.error,
         extracted: etlResult.results.extracted,
@@ -212,13 +213,11 @@ router.post('/catalog', requiresAuth(), upload.single('catalog'), async (req, re
     
     const { validProducts, failedProducts } = etlResult.results;
     
-    console.log(`✅ [ETL] Extracted: ${etlResult.results.extracted} products`);
-    console.log(`✅ [ETL] Validated: ${etlResult.results.validated} products`);
-    console.log(`❌ [ETL] Failed: ${etlResult.results.failed} products`);
+    console.log(` [ETL] Extracted: ${etlResult.results.extracted} products`);
+    console.log(` [ETL] Validated: ${etlResult.results.validated} products`);
+    console.log(` [ETL] Failed: ${etlResult.results.failed} products`);
     
-    // ============================================================================
     // LOAD PHASE: Insert valid products into database
-    // ============================================================================
     
     const addedProducts = [];
     const loadFailedProducts = [];
@@ -235,7 +234,7 @@ router.post('/catalog', requiresAuth(), upload.single('catalog'), async (req, re
         
         addedProducts.push(newProduct);
       } catch (err) {
-        console.error(`❌ [ETL LOAD] Failed to insert product:`, err);
+        console.error(` [ETL LOAD] Failed to insert product:`, err);
         loadFailedProducts.push({
           product: productData.title,
           row: 'N/A',
@@ -244,7 +243,7 @@ router.post('/catalog', requiresAuth(), upload.single('catalog'), async (req, re
       }
     }
     
-    console.log(`💾 [ETL LOAD] Successfully loaded ${addedProducts.length} products to database`);
+    console.log(` [ETL LOAD] Successfully loaded ${addedProducts.length} products to database`);
     
     // Combine failed products from validation and load phases
     const allFailedProducts = [...failedProducts, ...loadFailedProducts];
@@ -262,7 +261,7 @@ router.post('/catalog', requiresAuth(), upload.single('catalog'), async (req, re
     });
     
   } catch (err) {
-    console.error('❌ [ETL] Unexpected error:', err);
+    console.error(' [ETL] Unexpected error:', err);
     res.status(500).json({ error: 'Failed to upload catalog: ' + err.message });
   }
 });

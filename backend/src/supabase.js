@@ -23,7 +23,10 @@ export const supabase = (supabaseUrl && supabaseServiceRoleKey)
  * @param {string} contentType - The MIME type of the file
  * @returns {Promise<{success: boolean, publicUrl?: string, error?: string}>}
  */
-export async function uploadProductImage(fileBuffer, fileName, productId, contentType) {
+export async function uploadProductImage(fileBuffer, fileName, productId, contentType, retryCount = 0) {
+  const MAX_RETRIES = 3;
+  const RETRY_DELAY = 1000; // 1 second base delay
+  
   try {
     // Create a unique file path: products/{productId}/image_{timestamp}_{filename}
     const timestamp = Date.now();
@@ -62,6 +65,18 @@ export async function uploadProductImage(fileBuffer, fileName, productId, conten
 
   } catch (error) {
     console.error('Image upload error:', error);
+    
+    // Retry on network errors
+    if (retryCount < MAX_RETRIES && (
+      error.message?.includes('fetch failed') || 
+      error.message?.includes('SocketError') ||
+      error.message?.includes('other side closed')
+    )) {
+      console.log(`🔄 Retrying image upload (${retryCount + 1}/${MAX_RETRIES}) after network error`);
+      await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * (retryCount + 1)));
+      return uploadProductImage(fileBuffer, fileName, productId, contentType, retryCount + 1);
+    }
+    
     return {
       success: false,
       error: error.message

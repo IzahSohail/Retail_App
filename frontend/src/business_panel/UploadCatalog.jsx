@@ -118,7 +118,7 @@ export default function UploadCatalog({ businessInfo }) {
                 {message.details?.summary && (
                   <div className="mt-3 pt-3 border-t border-green-200">
                     <p className="text-sm text-green-700">
-                      📊 <strong>Summary:</strong> {message.details.summary.loaded} loaded, {message.details.summary.validated} validated, {message.details.summary.failed} failed
+                       <strong>Summary:</strong> {message.details.summary.loaded} loaded, {message.details.summary.validated} validated, {message.details.summary.failed} failed
                     </p>
                   </div>
                 )}

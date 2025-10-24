@@ -11,6 +11,8 @@ import Checkout from './components/Checkout';
 import Cart from './components/Cart';
 import BusinessRegister from './business_panel/BusinessRegister';
 import BusinessDashboard from './business_panel/BusinessDashboard';
+import AdminPanel from './admin/AdminPanel';
+import StudentVerification from './verification/StudentVerification';
 
 export default function App() {
   const [greet, setGreet] = useState('');
@@ -57,7 +59,7 @@ export default function App() {
         setUserHasListings(false);
         setCartItemCount(0);
       });
-  }, []); // ✅ Run only once on mount
+  }, []); //  Run only once on mount
 
   // Separate useEffect for cart count when profile changes..todo: what does this mean??
   useEffect(() => {
@@ -132,7 +134,19 @@ export default function App() {
                             </Button>
                           </Link>
 
-                          {profile.role === 'BUSINESS' ? (
+                          {['izahs2003@gmail.com', 'tj2286@nyu.edu'].includes(profile.email) && (
+                            <Link to="/admin">
+                              <Button variant="outline" size="sm" className="border-purple-600 text-purple-600">
+                                <User className="w-4 h-4 mr-2" />
+                                Admin Panel
+                              </Button>
+                            </Link>
+                          )}
+
+                          {profile.role === 'ADMIN' ? (
+                            // Admins don't see listing or seller buttons
+                            null
+                          ) : profile.role === 'BUSINESS' ? (
                             <Link to="/business/dashboard">
                               <Button variant="outline" size="sm">
                                 <ShoppingBag className="w-4 h-4 mr-2" />
@@ -155,6 +169,14 @@ export default function App() {
                                   </Button>
                                 </Link>
                               )}
+                              
+                              {/* TODO: Re-enable when seller verification is properly implemented
+                              <Link to="/verification">
+                                <Button variant="ghost" size="sm" className="text-blue-600">
+                                  Become a Seller
+                                </Button>
+                              </Link>
+                              */}
                             </>
                           )}
 
@@ -215,6 +237,9 @@ export default function App() {
 
           <Route path="/business" element={<BusinessRegister />} />
           <Route path="/business/dashboard" element={<BusinessDashboard />} />
+          
+          <Route path="/admin" element={<AdminPanel />} />
+          <Route path="/verification" element={<StudentVerification />} />
 
         </Routes>
       </div>

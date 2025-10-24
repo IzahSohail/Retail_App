@@ -20,7 +20,7 @@ async function setupConcurrencyTest() {
         picture: 'https://via.placeholder.com/150'
       }
     });
-    console.log(`✅ Created seller: ${seller.email} (ID: ${seller.id})`);
+    console.log(` Created seller: ${seller.email} (ID: ${seller.id})`);
 
     // 2. Create a test product with limited stock
     const product = await prisma.product.upsert({
@@ -41,10 +41,10 @@ async function setupConcurrencyTest() {
         active: true
       }
     });
-    console.log(`✅ Created product: ${product.title} (ID: ${product.id}, Stock: ${product.stock})`);
+    console.log(` Created product: ${product.title} (ID: ${product.id}, Stock: ${product.stock})`);
 
     // 3. Create 10 test buyers
-    console.log('\n📦 Creating 10 test buyers...');
+    console.log('\n Creating 10 test buyers...');
     const buyers = [];
     for (let i = 1; i <= 10; i++) {
       const buyer = await prisma.user.upsert({
@@ -58,20 +58,20 @@ async function setupConcurrencyTest() {
         }
       });
       buyers.push(buyer);
-      console.log(`  ✅ Buyer ${i}: ${buyer.email} (ID: ${buyer.id})`);
+      console.log(`   Buyer ${i}: ${buyer.email} (ID: ${buyer.id})`);
     }
 
     console.log('\n✨ Concurrency test data setup complete!\n');
-    console.log('📝 Summary:');
+    console.log(' Summary:');
     console.log(`   - Product ID: ${product.id}`);
     console.log(`   - Product Stock: ${product.stock}`);
     console.log(`   - Number of Buyers: ${buyers.length}`);
     console.log(`   - Seller ID: ${seller.id}`);
-    console.log('\n🧪 Now run the concurrency test:');
+    console.log('\n Now run the concurrency test:');
     console.log('   npx jest tests/concurrency/concurrency.test.js\n');
 
   } catch (error) {
-    console.error('❌ Error setting up concurrency test:', error);
+    console.error(' Error setting up concurrency test:', error);
     throw error;
   } finally {
     await prisma.$disconnect();

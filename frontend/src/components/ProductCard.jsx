@@ -88,6 +88,11 @@ export default function ProductCard({ p, user, onLogin, onCartUpdate }) {
 
         {/* Badges */}
         <div className="absolute top-3 left-3 flex gap-2 flex-wrap max-w-[calc(100%-3rem)]">
+          {p.flashSale && (
+            <Badge className="bg-red-600 text-white hover:bg-red-700 animate-pulse">
+              ⚡ Flash Sale {p.flashSale.savingsPercent}% OFF
+            </Badge>
+          )}
           {p.isB2B && (
             <Badge className="bg-blue-600 text-white hover:bg-blue-700">
               Business Seller
@@ -121,9 +126,22 @@ export default function ProductCard({ p, user, onLogin, onCartUpdate }) {
             {p.description}
           </p>
           <div className="flex items-center justify-between">
-            <span className="text-lg font-bold text-purple-600">
-              {price}
-            </span>
+            <div className="flex flex-col">
+              {p.flashSale ? (
+                <>
+                  <span className="text-lg font-bold text-red-600">
+                    د.إ {(p.flashSale.discountedPriceMinor / 100).toFixed(2)}
+                  </span>
+                  <span className="text-xs text-gray-500 line-through">
+                    د.إ {(p.priceMinor / 100).toFixed(2)}
+                  </span>
+                </>
+              ) : (
+                <span className="text-lg font-bold text-purple-600">
+                  {price}
+                </span>
+              )}
+            </div>
             <span className="text-xs text-gray-500">
               Stock: {stock}
             </span>

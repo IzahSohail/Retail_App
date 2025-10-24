@@ -83,10 +83,17 @@ export default function BusinessDashboard() {
             <span className="font-semibold">Under Review</span>
           </div>
         );
-      default:
+      case 'REJECTED':
         return (
           <div className="flex items-center text-red-600 bg-red-50 px-3 py-1 rounded-full">
             <XCircle className="w-4 h-4 mr-2" />
+            <span className="font-semibold">Rejected</span>
+          </div>
+        );
+      default:
+        return (
+          <div className="flex items-center text-yellow-600 bg-yellow-50 px-3 py-1 rounded-full">
+            <Clock className="w-4 h-4 mr-2" />
             <span className="font-semibold">Pending Verification</span>
           </div>
         );

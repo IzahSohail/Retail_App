@@ -16,29 +16,59 @@ import { uploadProductImage } from './supabase.js';
 // for the business panel 
 import businessRouter from './routes/business.js';
 
+// Admin routes
+import adminDashboardRouter from './routes/admin.dashboard.js';
+import adminFlashSalesRouter from './routes/admin.flashsales.js';
+import pricingRouter from './routes/pricing.js';
+import verificationRouter from './routes/verification.js';
+
 // Payment Service with retry, rollback, and circuit breaker
 import paymentService from './services/PaymentService.js';
 
 const app = express();
 
+// Test mode configuration
+const TEST_MODE = process.env.TEST_MODE === 'true' || process.env.NODE_ENV === 'test';
+
+if (TEST_MODE) {
+  console.log('🧪 TEST MODE ENABLED - Authentication bypassed for testing');
+}
+
 // Test authentication middleware - allows bypassing Auth0 in test mode
 function testAuthMiddleware(req, res, next) {
-  // If in test mode and test buyer info is provided, mock the session
-  if (process.env.NODE_ENV === 'test' && req.body._testBuyerAuth0Id) {
-    req.oidc = {
-      isAuthenticated: () => true,
-      user: {
-        sub: req.body._testBuyerAuth0Id,
-        email: req.body._testBuyerEmail,
-        name: req.body._testBuyerName,
-        picture: req.body._testBuyerPicture
+  // If in test mode, check for test credentials in body (after multer parses it)
+  if (TEST_MODE) {
+    // For multipart forms, multer will parse body fields
+    // We need to check after multer runs, so we'll set up a flag
+    const checkTestAuth = () => {
+      if (req.body && req.body._testBuyerAuth0Id) {
+        req.oidc = {
+          isAuthenticated: () => true,
+          user: {
+            sub: req.body._testBuyerAuth0Id,
+            email: req.body._testBuyerEmail,
+            name: req.body._testBuyerName,
+            picture: req.body._testBuyerPicture
+          }
+        };
+        // Remove test fields from body so they don't interfere
+        delete req.body._testBuyerAuth0Id;
+        delete req.body._testBuyerEmail;
+        delete req.body._testBuyerName;
+        delete req.body._testBuyerPicture;
+        return true;
       }
+      return false;
     };
-    // Remove test fields from body so they don't interfere
-    delete req.body._testBuyerAuth0Id;
-    delete req.body._testBuyerEmail;
-    delete req.body._testBuyerName;
-    delete req.body._testBuyerPicture;
+    
+    // Try to set up test auth immediately
+    if (checkTestAuth()) {
+      return next();
+    }
+    
+    // If not available yet, it means multer hasn't parsed the body
+    // Store the check function for later
+    req._testAuthCheck = checkTestAuth;
     return next();
   }
   
@@ -124,13 +154,13 @@ const authConfig = {
         try {
           const decoded = jwt.decode(session.id_token);
           user = decoded || {};
-          console.log('🔵 [afterCallback] Decoded user:', {
+          console.log(' [afterCallback] Decoded user:', {
             sub: user.sub,
             email: user.email,
             name: user.name
           });
         } catch (jwtError) {
-          console.error('❌ [afterCallback] JWT decode error:', jwtError);
+          console.error(' [afterCallback] JWT decode error:', jwtError);
         }
       }
       
@@ -140,9 +170,34 @@ const authConfig = {
       const picture = user.picture;
       
       if (auth0Id && email) {
-        // Determine role based on registration type
-        const role = isBusiness ? 'BUSINESS' : 'USER';
-        console.log(`🔵 [afterCallback] Setting user role: ${role}`);
+        // Determine role based on admin emails first, then registration type
+        const adminEmails = ['izahs2003@gmail.com', 'tj2286@nyu.edu'];
+        let newRole;
+        if (adminEmails.includes(email)) {
+          newRole = 'ADMIN';
+          console.log(`🔵 [afterCallback] Admin email detected: ${email}`);
+        } else {
+          newRole = isBusiness ? 'BUSINESS' : 'USER';
+        }
+        console.log(`🔵 [afterCallback] Calculated role: ${newRole}`);
+        
+        // Check if user already exists
+        const existingUser = await prisma.user.findUnique({ where: { email } });
+        
+        // Determine final role (never downgrade from BUSINESS or ADMIN)
+        let finalRole = newRole;
+        if (existingUser) {
+          if (existingUser.role === 'ADMIN') {
+            finalRole = 'ADMIN'; // Admin stays admin
+          } else if (existingUser.role === 'BUSINESS' && newRole === 'USER') {
+            finalRole = 'BUSINESS'; // Don't downgrade business to user
+            console.log(`🔵 [afterCallback] Preserving BUSINESS role for: ${email}`);
+          } else if (newRole === 'ADMIN' || newRole === 'BUSINESS') {
+            finalRole = newRole; // Allow upgrade to BUSINESS or ADMIN
+          }
+        }
+        
+        console.log(`🔵 [afterCallback] Final role: ${finalRole}`);
         
         const dbUser = await prisma.user.upsert({
           where: { email },
@@ -151,20 +206,20 @@ const authConfig = {
             name, 
             picture, 
             lastLogin: new Date(),
-            // Only update role if it's currently USER and we're upgrading to BUSINESS
-            ...(isBusiness && { role: 'BUSINESS' })
+            // Only update role if it's an upgrade or admin
+            role: finalRole
           },
           create: { 
             email, 
             name, 
             picture, 
             auth0Id, 
-            role,
+            role: finalRole,
             lastLogin: new Date() 
           }
         });
         
-        console.log('✅ [afterCallback] Upserted user:', dbUser.email, 'Role:', dbUser.role);
+        console.log(' [afterCallback] Upserted user:', dbUser.email, 'Role:', dbUser.role);
         
         // If business user, create B2B record
         if (isBusiness && dbUser.role === 'BUSINESS') {
@@ -179,7 +234,7 @@ const authConfig = {
                 status: 'PENDING'
               }
             });
-            console.log('✅ [afterCallback] Created B2B record');
+            console.log(' [afterCallback] Created B2B record');
           }
         }
       } else {
@@ -190,15 +245,15 @@ const authConfig = {
       if (isBusiness) {
         session.redirectTo = 'http://localhost:3000/business/dashboard';
         req.session.redirectTo = 'http://localhost:3000/business/dashboard'; // Also store in req.session
-        console.log('🔵 [afterCallback] Set redirectTo in Auth0 session:', session.redirectTo);
-        console.log('🔵 [afterCallback] Set redirectTo in req.session:', req.session.redirectTo);
+        console.log(' [afterCallback] Set redirectTo in Auth0 session:', session.redirectTo);
+        console.log(' [afterCallback] Set redirectTo in req.session:', req.session.redirectTo);
       }
       
-      console.log('🔵 [afterCallback] Final req.session before return:', JSON.stringify(req.session, null, 2));
-      console.log('🔵 [afterCallback] ====== END ======');
+      console.log(' [afterCallback] Final req.session before return:', JSON.stringify(req.session, null, 2));
+      console.log(' [afterCallback] ====== END ======');
       
     } catch (e) {
-      console.error('❌ [afterCallback] Error:', e);
+      console.error(' [afterCallback] Error:', e);
     }
     return session;
   }
@@ -224,7 +279,12 @@ if (process.env.NODE_ENV !== 'test') {
     next();
   });
   
-  app.use(auth(authConfig));
+  // Only use Auth0 if not in test mode
+  if (!TEST_MODE) {
+    app.use(auth(authConfig));
+  } else {
+    console.log('🧪 Skipping Auth0 middleware in test mode');
+  }
   
   // Custom route to handle post-login redirects
   app.get('/', (req, res, next) => {
@@ -238,7 +298,7 @@ if (process.env.NODE_ENV !== 'test') {
     if (req.oidc && req.oidc.user && req.session && req.session.redirectTo) {
       const redirectTo = req.session.redirectTo;
       delete req.session.redirectTo; // Clear the redirect URL
-      console.log(`✅ [post-login redirect] Redirecting to: ${redirectTo}`);
+      console.log(` [post-login redirect] Redirecting to: ${redirectTo}`);
       return res.redirect(redirectTo);
     }
     next();
@@ -357,6 +417,36 @@ app.get('/api/products', async (req, res) => {
         : {})
     };
 
+    // Get active flash sales
+    const now = new Date();
+    const activeFlashSales = await prisma.flashSale.findMany({
+      where: {
+        startsAt: { lte: now },
+        endsAt: { gte: now }
+      },
+      include: {
+        items: {
+          select: {
+            productId: true
+          }
+        }
+      }
+    });
+
+    // Create a map of productId -> flashSale for quick lookup
+    const flashSaleMap = new Map();
+    activeFlashSales.forEach(sale => {
+      sale.items.forEach(item => {
+        flashSaleMap.set(item.productId, {
+          id: sale.id,
+          title: sale.title,
+          discountType: sale.discountType,
+          discountValue: sale.discountValue,
+          endsAt: sale.endsAt
+        });
+      });
+    });
+
     // Fetch products with seller info to determine if it's a business product
     const products = await prisma.product.findMany({
       where,
@@ -383,21 +473,46 @@ app.get('/api/products', async (req, res) => {
       }
     });
 
-    // Transform products to include business info
-    const items = products.map(p => ({
-      id: p.id,
-      title: p.title,
-      description: p.description,
-      priceMinor: p.priceMinor,
-      currency: p.currency,
-      stock: p.stock,
-      createdAt: p.createdAt,
-      categoryId: p.categoryId,
-      sellerId: p.sellerId,
-      imageUrl: p.imageUrl,
-      isB2B: p.seller.role === 'BUSINESS' && p.seller.b2b?.status === 'VERIFIED',
-      businessName: p.seller.b2b?.businessName || null
-    }));
+    // Transform products to include business info and flash sale data
+    const items = products.map(p => {
+      const flashSale = flashSaleMap.get(p.id);
+      let discountedPrice = p.priceMinor;
+      
+      if (flashSale) {
+        // Calculate discounted price
+        if (flashSale.discountType === 'PERCENTAGE') {
+          discountedPrice = Math.round(p.priceMinor * (1 - flashSale.discountValue / 100));
+        } else if (flashSale.discountType === 'FIXED') {
+          discountedPrice = Math.max(0, p.priceMinor - flashSale.discountValue);
+        }
+      }
+
+      return {
+        id: p.id,
+        title: p.title,
+        description: p.description,
+        priceMinor: p.priceMinor,
+        currency: p.currency,
+        stock: p.stock,
+        createdAt: p.createdAt,
+        categoryId: p.categoryId,
+        sellerId: p.sellerId,
+        imageUrl: p.imageUrl,
+        isB2B: p.seller.role === 'BUSINESS' && p.seller.b2b?.status === 'VERIFIED',
+        businessName: p.seller.b2b?.businessName || null,
+        // Flash sale info
+        flashSale: flashSale ? {
+          id: flashSale.id,
+          title: flashSale.title,
+          discountType: flashSale.discountType,
+          discountValue: flashSale.discountValue,
+          discountedPriceMinor: discountedPrice,
+          endsAt: flashSale.endsAt,
+          savings: p.priceMinor - discountedPrice,
+          savingsPercent: Math.round(((p.priceMinor - discountedPrice) / p.priceMinor) * 100)
+        } : null
+      };
+    });
 
     res.json({
       items,
@@ -426,8 +541,18 @@ app.get('/api/categories', async (req, res) => {
 
 // --- Create listing endpoint ---
 // POST /api/listings
-app.post('/api/listings', requiresAuth(), upload.single('image'), async (req, res) => {
+app.post('/api/listings', testAuthMiddleware, upload.single('image'), async (req, res) => {
   try {
+    // In test mode, check for test auth after multer has parsed the body
+    if (TEST_MODE && req._testAuthCheck) {
+      req._testAuthCheck();
+    }
+    
+    // Verify authentication
+    if (!req.oidc || !req.oidc.user) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    
     const { title, description, priceMinor, currency = 'AED', categoryId, stock = 1, imageUrl } = req.body;
     const sellerAuth0Id = req.oidc.user.sub;
     const sellerEmail = req.oidc.user.email;
@@ -520,8 +645,49 @@ app.post('/api/listings', requiresAuth(), upload.single('image'), async (req, re
 
   } catch (err) {
     console.error('POST /api/listings error:', err);
+    console.error('Error details:', {
+      message: err.message,
+      stack: err.stack,
+      code: err.code
+    });
     res.status(500).json({ 
       error: 'Failed to create listing',
+      details: TEST_MODE ? err.message : undefined,
+      success: false 
+    });
+  }
+});
+
+// --- Delete a product (Admin only) ---
+// DELETE /api/products/:id
+app.delete('/api/products/:id', requiresAuth(), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userEmail = req.oidc.user.email;
+    
+    // Check if user is admin
+    const adminEmails = ['izahs2003@gmail.com', 'tj2286@nyu.edu'];
+    if (!adminEmails.includes(userEmail)) {
+      return res.status(403).json({ 
+        error: 'Admin access required',
+        success: false 
+      });
+    }
+
+    // Delete the product
+    await prisma.product.delete({
+      where: { id }
+    });
+
+    res.json({
+      success: true,
+      message: 'Product deleted successfully'
+    });
+
+  } catch (err) {
+    console.error('DELETE /api/products/:id error:', err);
+    res.status(500).json({ 
+      error: 'Failed to delete product',
       success: false 
     });
   }
@@ -745,7 +911,7 @@ app.post('/api/purchase', testAuthMiddleware, async (req, res) => {
         idempotencyKey: sale.id // Use sale ID for idempotency
       });
     } catch (error) {
-      console.error('❌ Payment processing error:', error);
+      console.error(' Payment processing error:', error);
       
       // Rollback: Cancel sale and return stock
       await prisma.$transaction(async (tx) => {
@@ -954,7 +1120,7 @@ app.get('/api/cart', requiresAuth(), async (req, res) => {
 });
 
 // POST /api/cart/add - Add item to cart . can use for integration test
-app.post('/api/cart/add', requiresAuth(), async (req, res) => {
+app.post('/api/cart/add', testAuthMiddleware, async (req, res) => {
   try {
     const { productId, quantity = 1 } = req.body;
     const userAuth0Id = req.oidc.user.sub;
@@ -1128,7 +1294,7 @@ app.delete('/api/cart/remove', requiresAuth(), async (req, res) => {
 });
 
 // POST /api/cart/checkout - Checkout cart items
-app.post('/api/cart/checkout', requiresAuth(), async (req, res) => {
+app.post('/api/cart/checkout', testAuthMiddleware, async (req, res) => {
   try {
     const { paymentMethod = 'CARD' } = req.body;
     const buyerAuth0Id = req.oidc.user.sub;
@@ -1181,6 +1347,33 @@ app.post('/api/cart/checkout', requiresAuth(), async (req, res) => {
       return res.status(400).json({ error: 'Cart is empty' });
     }
 
+    // Get active flash sales to apply discounts
+    const now = new Date();
+    const activeFlashSales = await prisma.flashSale.findMany({
+      where: {
+        startsAt: { lte: now },
+        endsAt: { gte: now }
+      },
+      include: {
+        items: {
+          select: {
+            productId: true
+          }
+        }
+      }
+    });
+
+    // Create flash sale map
+    const flashSaleMap = new Map();
+    activeFlashSales.forEach(sale => {
+      sale.items.forEach(item => {
+        flashSaleMap.set(item.productId, {
+          discountType: sale.discountType,
+          discountValue: sale.discountValue
+        });
+      });
+    });
+
     // Pre-validate items (basic checks only - stock will be validated atomically)
     let subtotalMinor = 0;
     const validatedItems = [];
@@ -1202,13 +1395,26 @@ app.post('/api/cart/checkout', requiresAuth(), async (req, res) => {
         return res.status(400).json({ error: `Cannot purchase your own product: "${product.title}"` });
       }
 
-      const lineTotal = product.priceMinor * cartItem.quantity;
+      // Calculate price with flash sale discount if applicable
+      let effectivePrice = product.priceMinor;
+      const flashSale = flashSaleMap.get(product.id);
+      
+      if (flashSale) {
+        if (flashSale.discountType === 'PERCENTAGE') {
+          effectivePrice = Math.round(product.priceMinor * (1 - flashSale.discountValue / 100));
+        } else if (flashSale.discountType === 'FIXED') {
+          effectivePrice = Math.max(0, product.priceMinor - flashSale.discountValue);
+        }
+      }
+
+      const lineTotal = effectivePrice * cartItem.quantity;
       subtotalMinor += lineTotal;
 
       validatedItems.push({
         cartItem,
         product,
-        lineTotal
+        lineTotal,
+        effectivePrice
       });
     }
 
@@ -1296,7 +1502,7 @@ app.post('/api/cart/checkout', requiresAuth(), async (req, res) => {
         idempotencyKey: sale.id // Use sale ID for idempotency
       });
     } catch (error) {
-      console.error('❌ Cart checkout payment error:', error);
+      console.error(' Cart checkout payment error:', error);
       
       // Rollback: Cancel sale and return all reserved stock
       await prisma.$transaction(async (tx) => {
@@ -1426,6 +1632,10 @@ app.delete('/api/cart/clear', requiresAuth(), async (req, res) => {
 });
 
 app.use('/api/business', businessRouter);
+app.use('/api/admin', adminDashboardRouter);
+app.use('/api/admin/flash-sales', adminFlashSalesRouter);
+app.use('/api/pricing', pricingRouter);
+app.use('/api/verification', verificationRouter);
 
 
 // Serve frontend (built) if exists, otherwise redirect root to CRA dev server

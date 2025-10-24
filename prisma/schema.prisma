@@ -8,21 +8,26 @@ datasource db {
 }
 
 model User {
-  id          String    @id @default(cuid())
-  email       String    @unique
-  name        String?
-  auth0Id     String?   @unique
-  picture     String?
-  gender      String?
-  dateOfBirth DateTime?
-  role        UserRole  @default(USER)
-  lastLogin   DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  sales       Sale[]    @relation("BuyerSales")
-  products    Product[] @relation("SellerProducts")
-  cart        Cart?
-  b2b         B2B?
+  id                    String                  @id @default(cuid())
+  email                 String                  @unique
+  name                  String?
+  auth0Id               String?                 @unique
+  picture               String?
+  gender                String?
+  dateOfBirth           DateTime?
+  role                  UserRole                @default(USER)
+  lastLogin             DateTime?
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+  phoneNumber           String?
+  studentId             String?
+  university            String?
+  isVerified            Boolean                 @default(false)
+  sales                 Sale[]                  @relation("BuyerSales")
+  products              Product[]               @relation("SellerProducts")
+  cart                  Cart?
+  b2b                   B2B?
+  verification_requests verification_requests[]
 
   @@map("users")
 }
@@ -38,22 +43,23 @@ model Category {
 }
 
 model Product {
-  id          String     @id @default(cuid())
-  title       String
-  description String
-  priceMinor  Int
-  currency    String     @default("AED")
-  stock       Int
-  active      Boolean    @default(true)
-  categoryId  String
-  sellerId    String
-  imageUrl    String?
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
-  category    Category   @relation(fields: [categoryId], references: [id])
-  seller      User       @relation("SellerProducts", fields: [sellerId], references: [id])
-  saleItems   SaleItem[]
-  cartItems   CartItem[]
+  id             String          @id @default(cuid())
+  title          String
+  description    String
+  priceMinor     Int
+  currency       String          @default("AED")
+  stock          Int
+  active         Boolean         @default(true)
+  categoryId     String
+  sellerId       String
+  imageUrl       String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  category       Category        @relation(fields: [categoryId], references: [id])
+  seller         User            @relation("SellerProducts", fields: [sellerId], references: [id])
+  saleItems      SaleItem[]
+  cartItems      CartItem[]
+  flashSaleItems FlashSaleItem[]
 
   @@index([categoryId])
   @@index([sellerId])
@@ -163,6 +169,7 @@ model B2B {
   tradeLicenseUrl      String?
   establishmentCardUrl String?
   status               B2BStatus @default(PENDING)
+  rejectionReason      String?
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
   user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -180,4 +187,54 @@ enum B2BStatus {
   PENDING
   UNDER_REVIEW
   VERIFIED
+  REJECTED
+}
+
+model verification_requests {
+  id              String    @id @default(cuid())
+  userId          String
+  status          String    @default("pending")
+  studentId       String
+  university      String
+  phoneNumber     String?
+  additionalInfo  String?
+  submittedAt     DateTime  @default(now())
+  reviewedAt      DateTime?
+  reviewedBy      String?
+  rejectionReason String?
+  users           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("verification_requests")
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED
+}
+
+model FlashSale {
+  id            String        @id @default(cuid())
+  title         String
+  description   String?
+  discountType  DiscountType
+  discountValue Int
+  startsAt      DateTime
+  endsAt        DateTime
+  priority      Int           @default(0)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  items         FlashSaleItem[]
+
+  @@map("flash_sales")
+}
+
+model FlashSaleItem {
+  id          String    @id @default(cuid())
+  flashSaleId String
+  productId   String
+  flashSale   FlashSale @relation(fields: [flashSaleId], references: [id], onDelete: Cascade)
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([flashSaleId, productId])
+  @@map("flash_sale_items")
 }
