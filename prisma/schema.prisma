@@ -1,11 +1,17 @@
 generator client {
   provider = "prisma-client-js"
+  output   = "../backend/node_modules/.prisma/client"
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
 }
+
+/*
+  Core application models (unchanged structure except where noted)
+*/
 
 model User {
   id                    String                  @id @default(cuid())
@@ -23,11 +29,19 @@ model User {
   studentId             String?
   university            String?
   isVerified            Boolean                 @default(false)
+  // Store credit balance (in minor units, e.g., cents)
+  creditMinor           Int                     @default(0)
   sales                 Sale[]                  @relation("BuyerSales")
   products              Product[]               @relation("SellerProducts")
   cart                  Cart?
   b2b                   B2B?
   verification_requests verification_requests[]
+  // New: return requests submitted by this user
+  returnRequests        ReturnRequest[]         @relation("UserReturnRequests")
+  // New: inspections performed by this user
+  inspections           Inspection[]
+  // New: audit logs for actions by this user
+  auditLogs             RmaAuditLog[]
 
   @@map("users")
 }
@@ -68,20 +82,24 @@ model Product {
 }
 
 model Sale {
-  id              String     @id @default(cuid())
-  buyerId         String
-  status          SaleStatus @default(PENDING)
-  subtotalMinor   Int
-  taxMinor        Int        @default(0)
-  feesMinor       Int        @default(0)
-  totalMinor      Int
-  currency        String     @default("AED")
-  idempotencyKey  String?    @unique
-  createdAt       DateTime   @default(now())
-  completedAt     DateTime?
-  payment         Payment?
-  buyer           User       @relation("BuyerSales", fields: [buyerId], references: [id], onDelete: Cascade)
-  items           SaleItem[]
+  id                     String     @id @default(cuid())
+  buyerId                String
+  status                 SaleStatus @default(PENDING)
+  subtotalMinor          Int
+  taxMinor               Int        @default(0)
+  feesMinor              Int        @default(0)
+  totalMinor             Int
+  currency               String     @default("AED")
+  idempotencyKey         String?    @unique
+  createdAt              DateTime   @default(now())
+  completedAt            DateTime?
+  payment                Payment?
+  buyer                  User       @relation("BuyerSales", fields: [buyerId], references: [id], onDelete: Cascade)
+  items                  SaleItem[]
+  // New: Return requests (RMA) associated with this sale
+  rmas                   ReturnRequest[] @relation("SaleRmas")
+  // Optional denormalized field, helpful for fast reads (sum of refunds in minor units)
+  refundedMinorTotal     Int?       @default(0)
 
   @@index([buyerId, status])
   @@index([createdAt])
@@ -98,6 +116,8 @@ model SaleItem {
   lineTotalMinor Int
   product        Product @relation(fields: [productId], references: [id])
   sale           Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  // New: return items that map back to this sale item
+  returnItems    ReturnItem[]
 
   @@index([saleId])
   @@index([productId])
@@ -113,6 +133,8 @@ model Payment {
   failureReason String?
   createdAt     DateTime      @default(now())
   sale          Sale          @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  // New: refunds issued against this payment (if any)
+  refunds       Refund[]
 
   @@map("payments")
 }
@@ -120,19 +142,29 @@ model Payment {
 enum PaymentMethod {
   CASH
   CARD
+  STORE_CREDIT
 }
 
 enum PaymentStatus {
   APPROVED
   DECLINED
+  // Refund-related additive values
+  REFUNDED
+  PARTIALLY_REFUNDED
 }
 
 enum SaleStatus {
   PENDING
   COMPLETED
   CANCELED
+  // Refund workflow statuses (additive)
+  REFUND_PENDING
+  REFUNDED
 }
 
+/*
+  Cart models (unchanged)
+*/
 model Cart {
   id        String     @id @default(cuid())
   userId    String     @unique
@@ -160,6 +192,9 @@ model CartItem {
   @@map("cart_items")
 }
 
+/*
+  B2B & verification (unchanged)
+*/
 model B2B {
   id                   String    @id @default(cuid())
   userId               String    @unique
@@ -207,6 +242,9 @@ model verification_requests {
   @@map("verification_requests")
 }
 
+/*
+  Flash sales (unchanged)
+*/
 enum DiscountType {
   PERCENTAGE
   FIXED
@@ -237,4 +275,147 @@ model FlashSaleItem {
 
   @@unique([flashSaleId, productId])
   @@map("flash_sale_items")
+}
+
+/*
+  NEW: Returns & Refunds workflow models
+*/
+
+enum RmaStatus {
+  INSPECTION              // Auto-set when user submits
+  APPROVED_AWAITING_SHIPMENT  // Admin approved, waiting for user to ship
+  REJECTED                // Admin rejected
+  SHIPPED                 // User has shipped the item back
+  COMPLETED               // Admin confirmed receipt, refund issued
+  CLOSED                  // Case closed/archived
+}
+
+enum InspectionResult {
+  PASS
+  FAIL
+  INCONCLUSIVE
+}
+
+enum RefundMethod {
+  ORIGINAL_PAYMENT
+  STORE_CREDIT
+  MANUAL
+}
+
+model ReturnRequest {
+  id              String       @id @default(cuid())
+  rmaNumber       String       @unique
+  saleId          String
+  userId          String
+  status          RmaStatus    @default(INSPECTION)
+  reason          String       @default("")
+  details         String       @default("")
+  photoUrls       String[]     // Array of Supabase URLs for uploaded photos
+  // Links
+  sale            Sale         @relation("SaleRmas", fields: [saleId], references: [id], onDelete: Cascade)
+  user            User         @relation("UserReturnRequests", fields: [userId], references: [id], onDelete: Cascade)
+  items           ReturnItem[]
+  shipments       ReturnShipment[]
+  inspections     Inspection[]
+  refunds         Refund[]
+  auditLogs       RmaAuditLog[]
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  completedAt     DateTime?    // Track completion date for cycle time metrics
+  // When store-credit was issued to the user's account for this RMA
+  creditIssuedAt  DateTime?
+
+  @@index([saleId])
+  @@index([userId])
+  @@index([status])
+  @@map("return_requests")
+}
+
+model ReturnItem {
+  id               String     @id @default(cuid())
+  returnRequestId  String
+  // Optional link back to the original sale item (snapshot of what was purchased)
+  saleItemId       String?
+  quantity         Int
+  conditionNotes   String    @default("")
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  returnRequest    ReturnRequest @relation(fields: [returnRequestId], references: [id], onDelete: Cascade)
+  saleItem         SaleItem?     @relation(fields: [saleItemId], references: [id])
+
+  @@index([returnRequestId])
+  @@index([saleItemId])
+  @@map("return_items")
+}
+
+model ReturnShipment {
+  id               String     @id @default(cuid())
+  returnRequestId  String
+  carrier          String     @default("")
+  trackingNumber   String     @default("")
+  shippedAt        DateTime?
+  receivedAt       DateTime?
+  labelUrl         String     @default("")
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  returnRequest    ReturnRequest @relation(fields: [returnRequestId], references: [id], onDelete: Cascade)
+
+  @@index([returnRequestId])
+  @@map("return_shipments")
+}
+
+model Inspection {
+  id               String           @id @default(cuid())
+  returnRequestId  String
+  inspectorId      String?          // optional link to user who inspected
+  result           InspectionResult
+  notes            String           @default("")
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  returnRequest    ReturnRequest    @relation(fields: [returnRequestId], references: [id], onDelete: Cascade)
+  inspector        User?            @relation(fields: [inspectorId], references: [id])
+
+  @@index([returnRequestId])
+  @@map("inspections")
+}
+
+model Refund {
+  id               String      @id @default(cuid())
+  returnRequestId  String
+  // optional payment reference (if refund is routed back to a payment record)
+  paymentId        String?     
+  method           RefundMethod
+  amountMinor      Int
+  currency         String      @default("AED")
+  reason           String      @default("")
+  refundRef        String      @default("")     
+  status           PaymentStatus
+  processedAt      DateTime?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  returnRequest    ReturnRequest @relation(fields: [returnRequestId], references: [id], onDelete: Cascade)
+  payment          Payment?      @relation(fields: [paymentId], references: [id])
+
+  @@index([returnRequestId])
+  @@index([paymentId])
+  @@map("refunds")
+}
+
+model RmaAuditLog {
+  id               String     @id @default(cuid())
+  returnRequestId  String
+  actorId          String?    // user or system actor
+  action           String
+  message          String     @default("")
+  createdAt        DateTime   @default(now())
+
+  returnRequest    ReturnRequest @relation(fields: [returnRequestId], references: [id], onDelete: Cascade)
+  actor            User?         @relation(fields: [actorId], references: [id])
+
+  @@index([returnRequestId])
+  @@map("rma_audit_logs")
 }

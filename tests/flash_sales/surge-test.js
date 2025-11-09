@@ -153,7 +153,7 @@ async function setupTestProducts() {
 }
 
 async function setupFlashSale(productIds) {
-  console.log(`\n⚡ Creating flash sale with ${CONFIG.DISCOUNT_PERCENTAGE}% discount...`);
+  console.log(`\nCreating flash sale with ${CONFIG.DISCOUNT_PERCENTAGE}% discount...`);
   
   try {
     const now = new Date();

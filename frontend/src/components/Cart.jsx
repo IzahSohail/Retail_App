@@ -4,7 +4,7 @@ import { api } from '../api';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { ArrowLeft, ShoppingBag, Trash2, Plus, Minus, CreditCard, DollarSign } from 'lucide-react';
+import { ArrowLeft, ShoppingBag, Trash2, Plus, Minus, CreditCard, DollarSign, Wallet } from 'lucide-react';
 
 export default function Cart({ user }) {
   const navigate = useNavigate();
@@ -13,6 +13,8 @@ export default function Cart({ user }) {
   const [updating, setUpdating] = useState({});
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('CARD');
   const [isCheckingOut, setIsCheckingOut] = useState(false);
+  const [storeCredits, setStoreCredits] = useState(0);
+  const [useStoreCredits, setUseStoreCredits] = useState(false);
 
   // Redirect if not logged in
   useEffect(() => {
@@ -23,7 +25,7 @@ export default function Cart({ user }) {
     }
   }, [user, navigate]);
 
-  // Load cart items
+  // Load cart items and user credits
   useEffect(() => {
     const loadCart = async () => {
       try {
@@ -37,8 +39,18 @@ export default function Cart({ user }) {
       }
     };
 
+    const loadUserCredits = async () => {
+      try {
+        const response = await api.get('/profile');
+        setStoreCredits(response.data.user?.creditMinor || 0);
+      } catch (error) {
+        console.error('Failed to load user credits:', error);
+      }
+    };
+
     if (user) {
       loadCart();
+      loadUserCredits();
     }
   }, [user]);
 
@@ -98,21 +110,50 @@ export default function Cart({ user }) {
     }, 0);
   };
 
+  const calculatePaymentBreakdown = () => {
+    const totalMinor = calculateTotal();
+    const creditsToUse = useStoreCredits ? Math.min(storeCredits, totalMinor) : 0;
+    const remainingAfterCredits = Math.max(0, totalMinor - creditsToUse);
+    
+    return {
+      totalMinor,
+      creditsToUse,
+      remainingAfterCredits,
+      canUseCredits: storeCredits > 0 && totalMinor > 0
+    };
+  };
+
   const handleCheckout = async () => {
     if (cartItems.length === 0) {
       alert('Your cart is empty');
       return;
     }
 
+    const { creditsToUse, remainingAfterCredits } = calculatePaymentBreakdown();
+    
+    if (useStoreCredits && creditsToUse === 0) {
+      alert('You do not have enough store credits for this purchase');
+      return;
+    }
+
+    if (useStoreCredits && remainingAfterCredits > 0 && selectedPaymentMethod === 'CASH') {
+      alert('Cannot combine store credits with cash payment. Please use card payment for the remaining amount.');
+      return;
+    }
+
     setIsCheckingOut(true);
     try {
       const response = await api.post('/cart/checkout', {
-        paymentMethod: selectedPaymentMethod
+        paymentMethod: selectedPaymentMethod,
+        storeCreditAmount: useStoreCredits ? creditsToUse : 0
       });
 
       if (response.data.success) {
         alert('Purchase completed successfully!');
         setCartItems([]); // Clear cart
+        // Reload credits
+        const profileResponse = await api.get('/profile');
+        setStoreCredits(profileResponse.data.user?.creditMinor || 0);
         navigate('/'); // Redirect to home
       } else {
         alert(response.data.error || 'Checkout failed');
@@ -130,7 +171,7 @@ export default function Cart({ user }) {
     return null;
   }
 
-  const totalMinor = calculateTotal();
+  const { totalMinor, creditsToUse, remainingAfterCredits, canUseCredits } = calculatePaymentBreakdown();
   const totalPrice = totalMinor === 0 ? 'FREE' : `${(totalMinor / 100).toFixed(2)} AED`;
 
   return (
@@ -294,42 +335,91 @@ export default function Cart({ user }) {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4" style={{padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem'}}>
+                  {/* Store Credits Display */}
+                  {canUseCredits && (
+                    <div className="p-3 bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border border-green-200" style={{padding: '0.75rem', background: 'linear-gradient(to bottom right, #f0fdf4, #d1fae5)', border: '1px solid #bbf7d0', borderRadius: '0.5rem'}}>
+                      <div className="flex items-center justify-between mb-2" style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem'}}>
+                        <div className="flex items-center gap-2" style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
+                          <Wallet className="w-4 h-4 text-green-600" />
+                          <span className="text-sm font-semibold text-gray-800" style={{fontSize: '0.875rem', fontWeight: '600', color: '#1f2937'}}>Store Credits</span>
+                        </div>
+                        <span className="text-sm font-bold text-green-700" style={{fontSize: '0.875rem', fontWeight: 'bold', color: '#15803d'}}>
+                          د.إ {((storeCredits || 0) / 100).toFixed(2)}
+                        </span>
+                      </div>
+                      <label className="flex items-center space-x-2 cursor-pointer" style={{display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer'}}>
+                        <input
+                          type="checkbox"
+                          checked={useStoreCredits}
+                          onChange={(e) => setUseStoreCredits(e.target.checked)}
+                          style={{margin: 0}}
+                        />
+                        <span className="text-sm text-gray-700" style={{fontSize: '0.875rem', color: '#374151'}}>Use store credits</span>
+                      </label>
+                    </div>
+                  )}
+
                   {/* Order Total */}
                   <div className="space-y-2" style={{display: 'flex', flexDirection: 'column', gap: '0.5rem'}}>
                     <div className="flex justify-between text-lg" style={{display: 'flex', justifyContent: 'space-between', fontSize: '1.125rem'}}>
-                      <span>Total ({cartItems.length} items)</span>
-                      <span className="font-bold text-purple-600" style={{fontWeight: 'bold', color: '#9333ea'}}>{totalPrice}</span>
+                      <span>Subtotal ({cartItems.length} items)</span>
+                      <span className="font-bold text-gray-800" style={{fontWeight: 'bold', color: '#1f2937'}}>{totalPrice}</span>
                     </div>
+                    
+                    {useStoreCredits && creditsToUse > 0 && (
+                      <>
+                        <div className="flex justify-between text-sm text-green-700" style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem', color: '#15803d'}}>
+                          <span>Store Credits Applied</span>
+                          <span className="font-semibold" style={{fontWeight: '600'}}>- د.إ {(creditsToUse / 100).toFixed(2)}</span>
+                        </div>
+                        {remainingAfterCredits > 0 && (
+                          <div className="flex justify-between text-lg border-t pt-2" style={{display: 'flex', justifyContent: 'space-between', fontSize: '1.125rem', borderTop: '1px solid #e5e7eb', paddingTop: '0.5rem'}}>
+                            <span className="font-semibold" style={{fontWeight: '600'}}>Amount to Pay</span>
+                            <span className="font-bold text-purple-600" style={{fontWeight: 'bold', color: '#9333ea'}}>د.إ {(remainingAfterCredits / 100).toFixed(2)}</span>
+                          </div>
+                        )}
+                        {remainingAfterCredits === 0 && (
+                          <div className="flex justify-between text-lg border-t pt-2" style={{display: 'flex', justifyContent: 'space-between', fontSize: '1.125rem', borderTop: '1px solid #e5e7eb', paddingTop: '0.5rem'}}>
+                            <span className="font-semibold text-green-700" style={{fontWeight: '600', color: '#15803d'}}>Fully Paid with Credits</span>
+                            <span className="font-bold text-green-700" style={{fontWeight: 'bold', color: '#15803d'}}>د.إ 0.00</span>
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
 
                   {/* Payment Method */}
-                  <div className="space-y-3" style={{display: 'flex', flexDirection: 'column', gap: '0.75rem'}}>
-                    <label className="text-sm font-semibold text-gray-800" style={{fontSize: '0.875rem', fontWeight: '600', color: '#1f2937'}}>Payment Method</label>
-                    <div className="space-y-2" style={{display: 'flex', flexDirection: 'column', gap: '0.5rem'}}>
-                      <label className="flex items-center space-x-2" style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
-                        <input
-                          type="radio"
-                          value="CARD"
-                          checked={selectedPaymentMethod === 'CARD'}
-                          onChange={(e) => setSelectedPaymentMethod(e.target.value)}
-                          style={{margin: 0}}
-                        />
-                        <CreditCard className="w-4 h-4" />
-                        <span>Card Payment</span>
-                      </label>
-                      <label className="flex items-center space-x-2" style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
-                        <input
-                          type="radio"
-                          value="CASH"
-                          checked={selectedPaymentMethod === 'CASH'}
-                          onChange={(e) => setSelectedPaymentMethod(e.target.value)}
-                          style={{margin: 0}}
-                        />
-                        <DollarSign className="w-4 h-4" />
-                        <span>Cash upon Collection</span>
-                      </label>
+                  {remainingAfterCredits > 0 && (
+                    <div className="space-y-3" style={{display: 'flex', flexDirection: 'column', gap: '0.75rem'}}>
+                      <label className="text-sm font-semibold text-gray-800" style={{fontSize: '0.875rem', fontWeight: '600', color: '#1f2937'}}>Payment Method</label>
+                      <div className="space-y-2" style={{display: 'flex', flexDirection: 'column', gap: '0.5rem'}}>
+                        <label className="flex items-center space-x-2" style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
+                          <input
+                            type="radio"
+                            value="CARD"
+                            checked={selectedPaymentMethod === 'CARD'}
+                            onChange={(e) => setSelectedPaymentMethod(e.target.value)}
+                            style={{margin: 0}}
+                          />
+                          <CreditCard className="w-4 h-4" />
+                          <span>Card Payment</span>
+                        </label>
+                        {!useStoreCredits && (
+                          <label className="flex items-center space-x-2" style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
+                            <input
+                              type="radio"
+                              value="CASH"
+                              checked={selectedPaymentMethod === 'CASH'}
+                              onChange={(e) => setSelectedPaymentMethod(e.target.value)}
+                              style={{margin: 0}}
+                            />
+                            <DollarSign className="w-4 h-4" />
+                            <span>Cash upon Collection</span>
+                          </label>
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* Checkout Button */}
                   <Button

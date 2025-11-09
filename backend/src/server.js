@@ -21,6 +21,7 @@ import adminDashboardRouter from './routes/admin.dashboard.js';
 import adminFlashSalesRouter from './routes/admin.flashsales.js';
 import pricingRouter from './routes/pricing.js';
 import verificationRouter from './routes/verification.js';
+import rmaRouter from './routes/rma.js';
 
 // Payment Service with retry, rollback, and circuit breaker
 import paymentService from './services/PaymentService.js';
@@ -31,7 +32,7 @@ const app = express();
 const TEST_MODE = process.env.TEST_MODE === 'true' || process.env.NODE_ENV === 'test';
 
 if (TEST_MODE) {
-  console.log('🧪 TEST MODE ENABLED - Authentication bypassed for testing');
+  console.log('TEST MODE ENABLED - Authentication bypassed for testing');
 }
 
 // Test authentication middleware - allows bypassing Auth0 in test mode
@@ -134,14 +135,14 @@ const authConfig = {
   },
   afterCallback: async (req, res, session, state) => {
     try {
-      console.log('🔵 [afterCallback] ====== START ======');
-      console.log('🔵 [afterCallback] Auth0 Session:', JSON.stringify(session, null, 2));
-      console.log('🔵 [afterCallback] Express req.session:', JSON.stringify(req.session, null, 2));
-      console.log('🔵 [afterCallback] State parameter:', state);
+      console.log('[afterCallback] ====== START ======');
+      console.log('[afterCallback] Auth0 Session:', JSON.stringify(session, null, 2));
+      console.log('[afterCallback] Express req.session:', JSON.stringify(req.session, null, 2));
+      console.log('[afterCallback] State parameter:', state);
       
       // Check if this is a business registration from session
       const isBusiness = req.session?.registrationType === 'business';
-      console.log('🔵 [afterCallback] Is business registration (from req.session):', isBusiness);
+      console.log('[afterCallback] Is business registration (from req.session):', isBusiness);
       
       // Don't clear the registration type yet, let's keep it for debugging
       // if (req.session?.registrationType) {
@@ -175,11 +176,11 @@ const authConfig = {
         let newRole;
         if (adminEmails.includes(email)) {
           newRole = 'ADMIN';
-          console.log(`🔵 [afterCallback] Admin email detected: ${email}`);
+          console.log(`[afterCallback] Admin email detected: ${email}`);
         } else {
           newRole = isBusiness ? 'BUSINESS' : 'USER';
         }
-        console.log(`🔵 [afterCallback] Calculated role: ${newRole}`);
+        console.log(`[afterCallback] Calculated role: ${newRole}`);
         
         // Check if user already exists
         const existingUser = await prisma.user.findUnique({ where: { email } });
@@ -191,13 +192,13 @@ const authConfig = {
             finalRole = 'ADMIN'; // Admin stays admin
           } else if (existingUser.role === 'BUSINESS' && newRole === 'USER') {
             finalRole = 'BUSINESS'; // Don't downgrade business to user
-            console.log(`🔵 [afterCallback] Preserving BUSINESS role for: ${email}`);
+            console.log(`[afterCallback] Preserving BUSINESS role for: ${email}`);
           } else if (newRole === 'ADMIN' || newRole === 'BUSINESS') {
             finalRole = newRole; // Allow upgrade to BUSINESS or ADMIN
           }
         }
         
-        console.log(`🔵 [afterCallback] Final role: ${finalRole}`);
+        console.log(`[afterCallback] Final role: ${finalRole}`);
         
         const dbUser = await prisma.user.upsert({
           where: { email },
@@ -238,7 +239,7 @@ const authConfig = {
           }
         }
       } else {
-        console.warn('⚠️ [afterCallback] Missing auth0Id or email', { auth0Id, email });
+        console.warn('[afterCallback] Missing auth0Id or email', { auth0Id, email });
       }
       
       // Store redirect URL in session for business users
@@ -265,14 +266,14 @@ if (process.env.NODE_ENV !== 'test') {
   app.get('/login', (req, res, next) => {
     const type = req.query.type;
     const screenHint = req.query.screen_hint;
-    console.log('🔵 [/login] Type parameter:', type);
-    console.log('🔵 [/login] Screen hint:', screenHint);
+    console.log('[/login] Type parameter:', type);
+    console.log('[/login] Screen hint:', screenHint);
     
     if (type === 'business') {
       // Store in session that this is a business registration
       req.session = req.session || {};
       req.session.registrationType = 'business';
-      console.log('🔵 [/login] Stored business registration type in session');
+      console.log('[/login] Stored business registration type in session');
     }
     
     // Let Auth0 middleware handle the login
@@ -283,12 +284,12 @@ if (process.env.NODE_ENV !== 'test') {
   if (!TEST_MODE) {
     app.use(auth(authConfig));
   } else {
-    console.log('🧪 Skipping Auth0 middleware in test mode');
+    console.log('Skipping Auth0 middleware in test mode');
   }
   
   // Custom route to handle post-login redirects
   app.get('/', (req, res, next) => {
-    console.log('🔵 [post-login redirect] Checking redirect conditions:');
+    console.log('[post-login redirect] Checking redirect conditions:');
     console.log('  - req.oidc:', !!req.oidc);
     console.log('  - req.oidc.user:', !!req.oidc?.user);
     console.log('  - req.session:', !!req.session);
@@ -394,6 +395,7 @@ app.get('/api/greet', (req, res) => {
 //create a route to retrieve products from the database, the idea is to retrieve 20 at a time 
 // and upon clicking a button like "see more", we retrieve more and show more
 app.get('/api/products', async (req, res) => {
+  console.log(prisma);
   try {
     const {
       limit = '20',
@@ -1039,6 +1041,41 @@ app.get('/api/my-sales', requiresAuth(), async (req, res) => {
   }
 });
 
+// --- Purchase History endpoint ---
+// GET /api/purchases - Get user's completed purchases
+app.get('/api/purchases', requiresAuth(), async (req, res) => {
+  try {
+    const userAuth0Id = req.oidc.user.sub;
+    const user = await prisma.user.findUnique({ where: { auth0Id: userAuth0Id } });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const purchases = await prisma.sale.findMany({
+      where: {
+        buyerId: user.id,
+        status: 'COMPLETED'
+      },
+      include: {
+        items: {
+          include: {
+            product: true
+          }
+        },
+        payment: true
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+
+    res.json({ success: true, purchases });
+  } catch (err) {
+    console.error('GET /api/purchases error:', err);
+    res.status(500).json({ error: 'Failed to load purchases' });
+  }
+});
+
 // --- Cart API endpoints ---
 
 // GET /api/cart - Get user's cart
@@ -1296,10 +1333,12 @@ app.delete('/api/cart/remove', requiresAuth(), async (req, res) => {
 // POST /api/cart/checkout - Checkout cart items
 app.post('/api/cart/checkout', testAuthMiddleware, async (req, res) => {
   try {
-    const { paymentMethod = 'CARD' } = req.body;
+    const { paymentMethod = 'CARD', storeCreditAmount = 0 } = req.body;
     const buyerAuth0Id = req.oidc.user.sub;
     const buyerEmail = req.oidc.user.email;
     const idempotencyKey = req.headers['idempotency-key'];
+    
+    const storeCreditMinor = parseInt(storeCreditAmount) || 0;
 
     // Check for existing sale with same idempotency key
     if (idempotencyKey) {
@@ -1330,6 +1369,22 @@ app.post('/api/cart/checkout', testAuthMiddleware, async (req, res) => {
         lastLogin: new Date()
       }
     });
+
+    // Validate store credits if being used
+    if (storeCreditMinor > 0) {
+      if (storeCreditMinor > (user.creditMinor || 0)) {
+        return res.status(400).json({
+          success: false,
+          error: 'Insufficient store credits'
+        });
+      }
+      if (storeCreditMinor < 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid store credit amount'
+        });
+      }
+    }
 
     // Get cart with items
     const cart = await prisma.cart.findUnique({
@@ -1493,48 +1548,71 @@ app.post('/api/cart/checkout', testAuthMiddleware, async (req, res) => {
     });
 
     // Phase 2: Payment processing with retry and circuit breaker
-    let paymentResult;
-    try {
-      paymentResult = await paymentService.processPayment({
-        amount: sale.totalMinor,
-        currency: 'AED',
-        paymentMethod: paymentMethod,
-        idempotencyKey: sale.id // Use sale ID for idempotency
-      });
-    } catch (error) {
-      console.error(' Cart checkout payment error:', error);
-      
-      // Rollback: Cancel sale and return all reserved stock
-      await prisma.$transaction(async (tx) => {
-        await tx.sale.update({
-          where: { id: sale.id },
-          data: { status: 'CANCELED' }
+    // Calculate amount after store credits
+    const amountAfterCredits = Math.max(0, sale.totalMinor - storeCreditMinor);
+    let paymentResult = null;
+    
+    // Only process payment if there's remaining amount after credits
+    if (amountAfterCredits > 0) {
+      try {
+        paymentResult = await paymentService.processPayment({
+          amount: amountAfterCredits,
+          currency: 'AED',
+          paymentMethod: paymentMethod,
+          idempotencyKey: sale.id // Use sale ID for idempotency
+        });
+      } catch (error) {
+        console.error(' Cart checkout payment error:', error);
+        
+        // Rollback: Cancel sale and return all reserved stock
+        await prisma.$transaction(async (tx) => {
+          await tx.sale.update({
+            where: { id: sale.id },
+            data: { status: 'CANCELED' }
+          });
+
+          // Return all reserved stock
+          for (const reservation of sale.stockReservations) {
+            await tx.product.update({
+              where: { id: reservation.productId },
+              data: { stock: { increment: reservation.quantity } }
+            });
+          }
         });
 
-        // Return all reserved stock
-        for (const reservation of sale.stockReservations) {
-          await tx.product.update({
-            where: { id: reservation.productId },
-            data: { stock: { increment: reservation.quantity } }
-          });
-        }
-      });
-
-      return res.status(500).json({
-        success: false,
-        error: error.code === 'CIRCUIT_OPEN' 
-          ? 'Payment service temporarily unavailable. Please try again later.'
-          : 'Payment processing failed. Please try again.'
-      });
+        return res.status(500).json({
+          success: false,
+          error: error.code === 'CIRCUIT_OPEN' 
+            ? 'Payment service temporarily unavailable. Please try again later.'
+            : 'Payment processing failed. Please try again.'
+        });
+      }
+    } else {
+      // Fully paid with store credits - create success result
+      paymentResult = {
+        success: true,
+        status: 'APPROVED',
+        transactionId: `STORE_CREDIT_${sale.id}`,
+        message: 'Paid with store credits'
+      };
     }
     
     // Phase 3: Finalize sale based on payment result
     const finalResult = await prisma.$transaction(async (tx) => {
+      // Deduct store credits if used
+      if (storeCreditMinor > 0) {
+        await tx.user.update({
+          where: { id: user.id },
+          data: { creditMinor: { decrement: storeCreditMinor } }
+        });
+      }
+
       // Create payment record
+      const paymentMethodToRecord = amountAfterCredits === 0 ? 'STORE_CREDIT' : paymentMethod;
       const payment = await tx.payment.create({
         data: {
           saleId: sale.id,
-          method: paymentMethod,
+          method: paymentMethodToRecord,
           status: paymentResult.status,
           approvalRef: paymentResult.success ? paymentResult.transactionId : null,
           failureReason: !paymentResult.success ? paymentResult.message : null
@@ -1558,11 +1636,19 @@ app.post('/api/cart/checkout', testAuthMiddleware, async (req, res) => {
         
         return { sale: completedSale, payment, success: true };
       } else {
-        // Payment failed - cancel sale and return all reserved stock
+        // Payment failed - cancel sale and return all reserved stock and credits
         const canceledSale = await tx.sale.update({
           where: { id: sale.id, status: 'PENDING' }, // Guarded state change
           data: { status: 'CANCELED' }
         });
+
+        // Return store credits if payment failed
+        if (storeCreditMinor > 0) {
+          await tx.user.update({
+            where: { id: user.id },
+            data: { creditMinor: { increment: storeCreditMinor } }
+          });
+        }
 
         // Return all reserved stock
         for (const { productId, quantity } of sale.stockReservations) {
@@ -1636,6 +1722,7 @@ app.use('/api/admin', adminDashboardRouter);
 app.use('/api/admin/flash-sales', adminFlashSalesRouter);
 app.use('/api/pricing', pricingRouter);
 app.use('/api/verification', verificationRouter);
+app.use('/api/rma', rmaRouter);
 
 
 // Serve frontend (built) if exists, otherwise redirect root to CRA dev server

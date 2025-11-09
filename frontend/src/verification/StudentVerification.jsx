@@ -160,7 +160,7 @@ const StudentVerification = ({ onVerificationSubmitted }) => {
         </div>
 
         <div className="p-5 bg-gray-50 rounded-lg border-l-4 border-blue-500">
-          <h4 className="text-base font-semibold text-gray-800 mb-4">📋 Verification Requirements:</h4>
+          <h4 className="text-base font-semibold text-gray-800 mb-4">Verification Requirements:</h4>
           <ul className="space-y-2 text-gray-600 leading-relaxed ml-5 list-disc">
             <li>Valid student ID from a recognized university</li>
             <li>Active email address (preferably .edu)</li>

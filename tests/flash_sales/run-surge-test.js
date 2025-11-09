@@ -68,7 +68,7 @@ async function main() {
     console.warn('');
   }
   
-  console.log('🎯 Starting flash sales surge test...');
+  console.log('Starting flash sales surge test...');
   console.log('');
   
   try {

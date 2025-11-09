@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
-import { ShoppingBag, User, LogOut, Plus, ShoppingCart } from 'lucide-react';
+import { ShoppingBag, User, LogOut, Plus, ShoppingCart, Package } from 'lucide-react';
 import { api } from './api';
 import { Button } from './components/ui/button';
 import ProductsList from './components/ProductsList';
@@ -13,6 +13,7 @@ import BusinessRegister from './business_panel/BusinessRegister';
 import BusinessDashboard from './business_panel/BusinessDashboard';
 import AdminPanel from './admin/AdminPanel';
 import StudentVerification from './verification/StudentVerification';
+import ReturnsRefunds from './components/ReturnRefunds';
 
 export default function App() {
   const [greet, setGreet] = useState('');
@@ -113,18 +114,27 @@ export default function App() {
                             Hi, {profile.name || profile.email?.split('@')[0] || 'User'}
                           </span>
                           
-                          {profile.role !== 'BUSINESS' && (
-                            <Link to="/cart">
-                              <Button variant="ghost" size="sm" className="relative">
-                                <ShoppingCart className="w-4 h-4 mr-2" />
-                                Cart
-                                {cartItemCount > 0 && (
-                                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center" style={{position: 'absolute', top: '-0.25rem', right: '-0.25rem', backgroundColor: '#ef4444', color: 'white', fontSize: '0.75rem', borderRadius: '50%', width: '1.25rem', height: '1.25rem', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
-                                    {cartItemCount}
-                                  </span>
-                                )}
-                              </Button>
-                            </Link>
+                          {profile.role !== 'BUSINESS' && profile.role !== 'ADMIN' && (
+                            <>
+                              <Link to="/cart">
+                                <Button variant="ghost" size="sm" className="relative">
+                                  <ShoppingCart className="w-4 h-4 mr-2" />
+                                  Cart
+                                  {cartItemCount > 0 && (
+                                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center" style={{position: 'absolute', top: '-0.25rem', right: '-0.25rem', backgroundColor: '#ef4444', color: 'white', fontSize: '0.75rem', borderRadius: '50%', width: '1.25rem', height: '1.25rem', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+                                      {cartItemCount}
+                                    </span>
+                                  )}
+                                </Button>
+                              </Link>
+                              
+                              <Link to="/returns">
+                                <Button variant="ghost" size="sm">
+                                  <Package className="w-4 h-4 mr-2" />
+                                  Return an Item
+                                </Button>
+                              </Link>
+                            </>
                           )}
                           
                           <Link to="/profile">
@@ -240,6 +250,7 @@ export default function App() {
           
           <Route path="/admin" element={<AdminPanel />} />
           <Route path="/verification" element={<StudentVerification />} />
+          <Route path="/returns" element={<ReturnsRefunds user={profile} />} />
 
         </Routes>
       </div>

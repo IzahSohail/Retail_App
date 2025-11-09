@@ -7,7 +7,7 @@ const prisma = new PrismaClient();
 
 async function setupConcurrencyTest() {
   try {
-    console.log('🔧 Setting up concurrency test data...\n');
+    console.log('Setting up concurrency test data...\n');
 
     // 1. Create a test seller
     const seller = await prisma.user.upsert({

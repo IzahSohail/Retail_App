@@ -11,6 +11,7 @@ export default function AdminPanel() {
   const [students, setStudents] = useState([]);
   const [businesses, setBusinesses] = useState([]);
   const [sales, setSales] = useState([]);
+  const [returns, setReturns] = useState([]);
   const [products, setProducts] = useState([]);
   const [flashSales, setFlashSales] = useState([]);
   const [showCreateFlashSale, setShowCreateFlashSale] = useState(false);
@@ -66,6 +67,11 @@ export default function AdminPanel() {
       const flashSalesRes = await fetch('/api/admin/flash-sales', { credentials: 'include' });
       const flashSalesData = await flashSalesRes.json();
       setFlashSales(flashSalesData.sales || []);
+
+      // Load returns
+      const returnsRes = await fetch('/api/rma', { credentials: 'include' });
+      const returnsData = await returnsRes.json();
+      setReturns(returnsData.rmas || returnsData.returns || []);
 
     } catch (error) {
       console.error('Error loading data:', error);
@@ -257,6 +263,50 @@ export default function AdminPanel() {
     }
   };
 
+  const handleReturnAction = async (returnId, action) => {
+    const message = action === 'reject' ? prompt('Rejection reason:') : '';
+    if (action === 'reject' && !message) return;
+
+    try {
+      await fetch(`/api/rma/${returnId}/authorize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ action, message })
+      });
+      alert(`Return ${action === 'authorize' ? 'approved' : 'rejected'} successfully!`);
+      loadData();
+    } catch (error) {
+      alert('Error: ' + error.message);
+    }
+  };
+
+  const handleIssueRefund = async (returnId) => {
+    const amountStr = prompt('Enter refund amount (in minor units, e.g., 1000 for 10.00 AED):');
+    if (!amountStr) return;
+    
+    const amountMinor = parseInt(amountStr);
+    if (isNaN(amountMinor) || amountMinor <= 0) {
+      alert('Invalid amount');
+      return;
+    }
+
+    const method = confirm('Click OK for Original Payment refund, Cancel for Store Credit') ? 'ORIGINAL_PAYMENT' : 'STORE_CREDIT';
+
+    try {
+      await fetch(`/api/rma/${returnId}/refund`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ amountMinor, method, reason: 'Admin issued refund' })
+      });
+      alert('Refund issued successfully!');
+      loadData();
+    } catch (error) {
+      alert('Error: ' + error.message);
+    }
+  };
+
   if (loading) {
     return <div className="container mx-auto p-8">Loading...</div>;
   }
@@ -289,6 +339,12 @@ export default function AdminPanel() {
           className={`pb-2 px-4 ${activeTab === 'sales' ? 'border-b-2 border-blue-600 font-semibold' : ''}`}
         >
           Sales Log ({sales.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('returns')}
+          className={`pb-2 px-4 ${activeTab === 'returns' ? 'border-b-2 border-blue-600 font-semibold' : ''}`}
+        >
+          Returns/Refunds ({returns.filter(r => r.status === 'INSPECTION').length})
         </button>
         <button
           onClick={() => setActiveTab('flashsales')}
@@ -473,6 +529,23 @@ export default function AdminPanel() {
             <Button onClick={loadData} variant="outline">Refresh</Button>
           </div>
 
+          {/* Sales Metrics */}
+          {sales.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-1 gap-4 mb-6">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-gray-600">Total Sales</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">
+                    د.إ {(sales.reduce((sum, sale) => sum + (sale.totalAmount || 0), 0) / 100).toFixed(2)}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">{sales.length} orders</p>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
           {sales.length === 0 ? (
             <Card>
               <CardContent className="p-8 text-center text-gray-500">
@@ -515,6 +588,235 @@ export default function AdminPanel() {
                 </table>
               </CardContent>
             </Card>
+          )}
+        </div>
+      )}
+
+      {/* Returns/Refunds Tab */}
+      {activeTab === 'returns' && (
+        <div className="space-y-4">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-2xl font-bold">Returns & Refunds Management</h2>
+            <Button onClick={loadData} variant="outline">Refresh</Button>
+          </div>
+
+          {/* Returns Metrics */}
+          {returns.length > 0 && (() => {
+            const completedReturns = returns.filter(r => r.status === 'COMPLETED' && r.createdAt && r.completedAt);
+            const cycleTimes = completedReturns.map(r => {
+              const created = new Date(r.createdAt);
+              const completed = new Date(r.completedAt);
+              return (completed - created) / (1000 * 60 * 60 * 24); // Convert to days
+            });
+            const avgCycleTime = cycleTimes.length > 0 
+              ? (cycleTimes.reduce((sum, time) => sum + time, 0) / cycleTimes.length).toFixed(1)
+              : '0.0';
+            
+            const totalRefundAmount = returns.reduce((sum, r) => {
+              if (r.refunds && r.refunds.length > 0) {
+                return sum + r.refunds.reduce((rSum, refund) => rSum + (refund.amountMinor || 0), 0);
+              }
+              return sum;
+            }, 0);
+
+            return (
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium text-gray-600">Total Returns</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{returns.length}</div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {returns.filter(r => r.status === 'INSPECTION').length} pending review
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium text-gray-600">Refunds Issued</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">
+                      {returns.filter(r => r.refunds && r.refunds.length > 0).length}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      د.إ {(totalRefundAmount / 100).toFixed(2)} total
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium text-gray-600">Avg Cycle Time</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{avgCycleTime} days</div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {completedReturns.length} completed returns
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium text-gray-600">Refund Rate</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">
+                      {sales.length > 0 
+                        ? ((returns.filter(r => r.refunds && r.refunds.length > 0).length / sales.length) * 100).toFixed(1)
+                        : '0.0'}%
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">of total orders</p>
+                  </CardContent>
+                </Card>
+              </div>
+            );
+          })()}
+
+          {returns.length === 0 ? (
+            <Card>
+              <CardContent className="p-8 text-center text-gray-500">
+                No return requests
+              </CardContent>
+            </Card>
+          ) : (
+            returns.map(returnReq => (
+              <Card key={returnReq.id}>
+                <CardHeader>
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <CardTitle>RMA: {returnReq.rmaNumber}</CardTitle>
+                      <p className="text-sm text-gray-600 mt-1">
+                        Requested: {new Date(returnReq.createdAt).toLocaleString()}
+                      </p>
+                    </div>
+                    <Badge 
+                      variant={
+                        returnReq.status === 'INSPECTION' ? 'warning' :
+                        returnReq.status === 'APPROVED_AWAITING_SHIPMENT' ? 'default' :
+                        returnReq.status === 'REJECTED' ? 'destructive' :
+                        returnReq.status === 'SHIPPED' ? 'default' :
+                        returnReq.status === 'COMPLETED' ? 'success' :
+                        'default'
+                      }
+                    >
+                      {returnReq.status}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-sm font-medium text-gray-600">User</p>
+                        <p className="text-sm">{returnReq.user?.name || 'N/A'}</p>
+                        <p className="text-xs text-gray-500">{returnReq.user?.email || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-600">Sale ID</p>
+                        <p className="text-sm font-mono">{returnReq.saleId}</p>
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Reason</p>
+                      <p className="text-sm">{returnReq.reason || 'N/A'}</p>
+                    </div>
+
+                    {returnReq.details && (
+                      <div>
+                        <p className="text-sm font-medium text-gray-600">Details</p>
+                        <p className="text-sm">{returnReq.details}</p>
+                      </div>
+                    )}
+
+                    {returnReq.items && returnReq.items.length > 0 && (
+                      <div>
+                        <p className="text-sm font-medium text-gray-600 mb-2">Items</p>
+                        <div className="space-y-2">
+                          {returnReq.items.map((item, idx) => (
+                            <div key={idx} className="bg-gray-50 p-2 rounded text-sm">
+                              <p>Quantity: {item.quantity}</p>
+                              {item.conditionNotes && (
+                                <p className="text-gray-600">Notes: {item.conditionNotes}</p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {returnReq.photoUrls && returnReq.photoUrls.length > 0 && (
+                      <div>
+                        <p className="text-sm font-medium text-gray-600 mb-2">Photos</p>
+                        <div className="flex gap-2 flex-wrap">
+                          {returnReq.photoUrls.map((url, idx) => (
+                            <a 
+                              key={idx} 
+                              href={url} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="text-blue-600 text-sm underline"
+                            >
+                              Photo {idx + 1}
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {returnReq.refunds && returnReq.refunds.length > 0 && (
+                      <div>
+                        <p className="text-sm font-medium text-gray-600 mb-2">Refunds</p>
+                        <div className="space-y-2">
+                          {returnReq.refunds.map((refund, idx) => (
+                            <div key={idx} className="bg-green-50 p-2 rounded text-sm">
+                              <p>Amount: {refund.amountMinor / 100} {refund.currency}</p>
+                              <p>Method: {refund.method}</p>
+                              <p>Status: {refund.status}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex gap-2 pt-4 border-t">
+                      {returnReq.status === 'INSPECTION' && (
+                        <>
+                          <Button
+                            onClick={() => handleReturnAction(returnReq.id, 'authorize')}
+                            size="sm"
+                            variant="default"
+                          >
+                            Approve Return
+                          </Button>
+                          <Button
+                            onClick={() => handleReturnAction(returnReq.id, 'reject')}
+                            size="sm"
+                            variant="destructive"
+                          >
+                            Reject Return
+                          </Button>
+                        </>
+                      )}
+                      
+                      {(returnReq.status === 'SHIPPED' || returnReq.status === 'APPROVED_AWAITING_SHIPMENT') && (
+                        <Button
+                          onClick={() => handleIssueRefund(returnReq.id)}
+                          size="sm"
+                          variant="default"
+                        >
+                          Issue Refund
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))
           )}
         </div>
       )}
@@ -709,7 +1011,7 @@ export default function AdminPanel() {
                         size="sm"
                         className="w-full"
                       >
-                        {sale.items?.length > 0 ? '⚙️ Manage Products' : '⚡ Activate Sale - Select Products'}
+                        {sale.items?.length > 0 ? 'Manage Products' : 'Activate Sale - Select Products'}
                       </Button>
                     </div>
                   </CardContent>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, User, Edit3, Save, X, Mail, Calendar, Clock, ShoppingBag, Camera } from 'lucide-react';
+import { ArrowLeft, User, Edit3, Save, X, Mail, Calendar, Clock, Camera, ShoppingBag, Wallet } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -19,6 +19,7 @@ export default function ViewProfile({ user }) {
     dateOfBirth: '',
     memberSince: '',
     lastLogin: '',
+    creditMinor: 0,
   });
   // Stats commented out for now - will implement later
   // const [stats, setStats] = useState({
@@ -46,6 +47,7 @@ export default function ViewProfile({ user }) {
           dateOfBirth: userData.dateOfBirth ? userData.dateOfBirth.split('T')[0] : '',
           memberSince: userData.createdAt ? new Date(userData.createdAt).toLocaleDateString() : '',
           lastLogin: userData.lastLogin ? new Date(userData.lastLogin).toLocaleDateString() : '',
+          creditMinor: userData.creditMinor || 0,
         });
 
         // Load stats (commented out for now - will implement later)
@@ -308,11 +310,23 @@ export default function ViewProfile({ user }) {
                     </p>
                     <p className="text-lg font-semibold text-gray-800">{profileData.lastLogin}</p>
                   </div>
+
+                  <div className="p-4 bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl border border-green-200">
+                    <p className="text-sm font-medium text-gray-600 mb-1 flex items-center gap-2">
+                      <Wallet className="w-4 h-4 text-green-600" />
+                      Store Credits
+                    </p>
+                    <p className="text-2xl font-bold text-green-700">
+                      د.إ {((profileData.creditMinor || 0) / 100).toFixed(2)}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">Available for purchases</p>
+                  </div>
                 </div>
               </div>
             )}
           </CardContent>
         </Card>
+
 
         {/* Activity Stats - Commented out for now, will implement later */}
         {/* 

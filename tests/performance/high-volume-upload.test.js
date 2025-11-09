@@ -245,7 +245,7 @@ async function uploadProduct(sellerIndex, productIndex, retryCount = 0) {
       error.message?.includes('fetch failed') ||
       error.message?.includes('Unexpected end of form')
     )) {
-      console.log(`⚠️  Seller ${sellerIndex}, Product ${productIndex}: Retry ${retryCount + 1}/${MAX_RETRIES} after ${error.code || error.message}`);
+      console.log(`Seller ${sellerIndex}, Product ${productIndex}: Retry ${retryCount + 1}/${MAX_RETRIES} after ${error.code || error.message}`);
       await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1))); // Exponential backoff
       return uploadProduct(sellerIndex, productIndex, retryCount + 1);
     }
@@ -332,7 +332,7 @@ async function runHighVolumeUploadTest() {
   
   // Record start time
   metrics.startTime = Date.now();
-  console.log(`⏰ Test started at: ${new Date(metrics.startTime).toISOString()}`);
+  console.log(`Test started at: ${new Date(metrics.startTime).toISOString()}`);
   
   try {
     // Create array of seller upload tasks with staggered start
@@ -421,7 +421,7 @@ async function runHighVolumeUploadTest() {
       cpuUsage: avgCpuPercentage <= CONFIG.MAX_CPU_THRESHOLD // Now comparing percentages correctly
     };
     
-    console.log('🎯 PERFORMANCE CRITERIA EVALUATION');
+    console.log('PERFORMANCE CRITERIA EVALUATION');
     console.log('='.repeat(50));
     console.log(` Completion Time (≤${CONFIG.TARGET_COMPLETION_TIME}s): ${performanceCriteria.completionTime ? 'PASS' : 'FAIL'} (${totalTestTime.toFixed(2)}s)`);
     console.log(` Success Rate (≥95%): ${performanceCriteria.successRate ? 'PASS' : 'FAIL'} (${successRate.toFixed(2)}%)`);

@@ -18,8 +18,8 @@ class MockPaymentAdapter {
   async processPayment(paymentRequest) {
     const { amount, currency, paymentMethod, idempotencyKey } = paymentRequest;
 
-    console.log(`💳 [MockPaymentAdapter] Processing payment: ${amount} ${currency} via ${paymentMethod}`);
-    console.log(`💳 [MockPaymentAdapter] Idempotency Key: ${idempotencyKey}`);
+    console.log(`[MockPaymentAdapter] Processing payment: ${amount} ${currency} via ${paymentMethod}`);
+    console.log(`[MockPaymentAdapter] Idempotency Key: ${idempotencyKey}`);
 
     // Simulate processing delay
     await this._delay(this.processingDelay);

@@ -90,7 +90,7 @@ export default function ProductCard({ p, user, onLogin, onCartUpdate }) {
         <div className="absolute top-3 left-3 flex gap-2 flex-wrap max-w-[calc(100%-3rem)]">
           {p.flashSale && (
             <Badge className="bg-red-600 text-white hover:bg-red-700 animate-pulse">
-              ⚡ Flash Sale {p.flashSale.savingsPercent}% OFF
+              Flash Sale {p.flashSale.savingsPercent}% OFF
             </Badge>
           )}
           {p.isB2B && (

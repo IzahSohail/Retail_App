@@ -171,7 +171,7 @@ async function sendPurchaseRequest(buyer, productId, quantity, buyerNumber) {
     }
 
   } catch (error) {
-    console.log(`   [${buyerNumber}] ⚠️  Error: ${error.message}`);
+    console.log(`   [${buyerNumber}] Error: ${error.message}`);
     return { success: false, error: error.message };
   }
 }

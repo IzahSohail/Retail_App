@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
-import { ArrowLeft, ShoppingBag, CreditCard, Banknote, Shield, CheckCircle } from 'lucide-react';
+import { ArrowLeft, ShoppingBag, CreditCard, Banknote, Shield, CheckCircle, Wallet } from 'lucide-react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
@@ -17,6 +17,8 @@ export default function Checkout({ user }) {
   const [processing, setProcessing] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('');
   const [error, setError] = useState('');
+  const [storeCredits, setStoreCredits] = useState(0);
+  const [useStoreCredits, setUseStoreCredits] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -31,7 +33,7 @@ export default function Checkout({ user }) {
       return;
     }
 
-    // Load product details
+    // Load product details and user credits
     const loadProduct = async () => {
       try {
         const response = await api.get('/products');
@@ -65,12 +67,47 @@ export default function Checkout({ user }) {
       }
     };
 
+    const loadUserCredits = async () => {
+      try {
+        const response = await api.get('/profile');
+        setStoreCredits(response.data.user?.creditMinor || 0);
+      } catch (error) {
+        console.error('Failed to load user credits:', error);
+      }
+    };
+
     loadProduct();
+    loadUserCredits();
   }, [user, productId, quantity, navigate]);
 
+  const calculatePaymentBreakdown = () => {
+    const totalMinor = product.priceMinor * quantity;
+    const creditsToUse = useStoreCredits ? Math.min(storeCredits, totalMinor) : 0;
+    const remainingAfterCredits = Math.max(0, totalMinor - creditsToUse);
+    
+    return {
+      totalMinor,
+      creditsToUse,
+      remainingAfterCredits,
+      canUseCredits: storeCredits > 0 && totalMinor > 0
+    };
+  };
+
   const handlePayment = async () => {
-    if (!selectedPaymentMethod) {
-      alert('Please select a payment method');
+    const { creditsToUse, remainingAfterCredits } = calculatePaymentBreakdown();
+    
+    if (useStoreCredits && creditsToUse === 0) {
+      alert('You do not have enough store credits for this purchase');
+      return;
+    }
+
+    if (remainingAfterCredits > 0 && !selectedPaymentMethod) {
+      alert('Please select a payment method for the remaining amount');
+      return;
+    }
+
+    if (useStoreCredits && remainingAfterCredits > 0 && selectedPaymentMethod === 'CASH') {
+      alert('Cannot combine store credits with cash payment. Please use card payment for the remaining amount.');
       return;
     }
 
@@ -79,7 +116,8 @@ export default function Checkout({ user }) {
       const response = await api.post('/purchase', {
         productId: product.id,
         quantity: quantity,
-        paymentMethod: selectedPaymentMethod
+        paymentMethod: remainingAfterCredits > 0 ? selectedPaymentMethod : 'STORE_CREDIT',
+        storeCreditAmount: useStoreCredits ? creditsToUse : 0
       });
 
       if (response.data.success) {
@@ -224,12 +262,39 @@ export default function Checkout({ user }) {
                       {isFreePurchase ? 'FREE' : `${unitPrice.toFixed(2)} ${product.currency}`}
                     </span>
                   </div>
-                  <div className="flex justify-between text-lg font-bold border-t pt-2" style={{borderTop: '1px solid #e5e7eb', paddingTop: '0.5rem'}}>
-                    <span>Total:</span>
-                    <span className="text-purple-600">
-                      {isFreePurchase ? 'FREE' : `${totalPrice.toFixed(2)} ${product.currency}`}
-                    </span>
-                  </div>
+                  {(() => {
+                    const { creditsToUse, remainingAfterCredits } = calculatePaymentBreakdown();
+                    return (
+                      <>
+                        <div className="flex justify-between text-lg font-bold border-t pt-2" style={{borderTop: '1px solid #e5e7eb', paddingTop: '0.5rem'}}>
+                          <span>Subtotal:</span>
+                          <span className="text-gray-800">
+                            {isFreePurchase ? 'FREE' : `${totalPrice.toFixed(2)} ${product.currency}`}
+                          </span>
+                        </div>
+                        {useStoreCredits && creditsToUse > 0 && (
+                          <>
+                            <div className="flex justify-between text-sm text-green-700">
+                              <span>Store Credits Applied:</span>
+                              <span className="font-semibold">- د.إ {(creditsToUse / 100).toFixed(2)}</span>
+                            </div>
+                            {remainingAfterCredits > 0 && (
+                              <div className="flex justify-between text-lg font-bold border-t pt-2" style={{borderTop: '1px solid #e5e7eb', paddingTop: '0.5rem'}}>
+                                <span>Amount to Pay:</span>
+                                <span className="text-purple-600">د.إ {(remainingAfterCredits / 100).toFixed(2)}</span>
+                              </div>
+                            )}
+                            {remainingAfterCredits === 0 && (
+                              <div className="flex justify-between text-lg font-bold border-t pt-2 text-green-700" style={{borderTop: '1px solid #e5e7eb', paddingTop: '0.5rem'}}>
+                                <span>Fully Paid with Credits:</span>
+                                <span>د.إ 0.00</span>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
             </CardContent>
@@ -244,8 +309,39 @@ export default function Checkout({ user }) {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
+              {/* Store Credits Display */}
+              {(() => {
+                const { canUseCredits } = calculatePaymentBreakdown();
+                return canUseCredits && (
+                  <div className="p-3 bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border border-green-200 mb-4" style={{padding: '0.75rem', background: 'linear-gradient(to bottom right, #f0fdf4, #d1fae5)', border: '1px solid #bbf7d0', borderRadius: '0.5rem', marginBottom: '1rem'}}>
+                    <div className="flex items-center justify-between mb-2" style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem'}}>
+                      <div className="flex items-center gap-2" style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
+                        <Wallet className="w-4 h-4 text-green-600" />
+                        <span className="text-sm font-semibold text-gray-800" style={{fontSize: '0.875rem', fontWeight: '600', color: '#1f2937'}}>Store Credits</span>
+                      </div>
+                      <span className="text-sm font-bold text-green-700" style={{fontSize: '0.875rem', fontWeight: 'bold', color: '#15803d'}}>
+                        د.إ {((storeCredits || 0) / 100).toFixed(2)}
+                      </span>
+                    </div>
+                    <label className="flex items-center space-x-2 cursor-pointer" style={{display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer'}}>
+                      <input
+                        type="checkbox"
+                        checked={useStoreCredits}
+                        onChange={(e) => setUseStoreCredits(e.target.checked)}
+                        style={{margin: 0}}
+                      />
+                      <span className="text-sm text-gray-700" style={{fontSize: '0.875rem', color: '#374151'}}>Use store credits</span>
+                    </label>
+                  </div>
+                );
+              })()}
+              
               <div className="space-y-4">
                 {/* Cash Payment */}
+                {(() => {
+                  const { remainingAfterCredits } = calculatePaymentBreakdown();
+                  if (remainingAfterCredits === 0) return null;
+                  return (
                 <div 
                   className={`border-2 rounded-lg p-4 cursor-pointer transition-all ${
                     selectedPaymentMethod === 'CASH' 
@@ -275,8 +371,14 @@ export default function Checkout({ user }) {
                     )}
                   </div>
                 </div>
+                  );
+                })()}
 
                 {/* Card Payment */}
+                {(() => {
+                  const { remainingAfterCredits } = calculatePaymentBreakdown();
+                  if (remainingAfterCredits === 0) return null;
+                  return (
                 <div 
                   className={`border-2 rounded-lg p-4 cursor-pointer transition-all ${
                     selectedPaymentMethod === 'CARD' 
@@ -306,13 +408,18 @@ export default function Checkout({ user }) {
                     )}
                   </div>
                 </div>
+                  );
+                })()}
               </div>
 
               {/* Payment Button */}
               <div className="pt-6" style={{paddingTop: '1.5rem'}}>
                 <Button
                   onClick={handlePayment}
-                  disabled={!selectedPaymentMethod || processing}
+                  disabled={(() => {
+                    const { remainingAfterCredits } = calculatePaymentBreakdown();
+                    return (remainingAfterCredits > 0 && !selectedPaymentMethod) || processing;
+                  })()}
                   className="w-full h-12 text-lg bg-gradient-to-r from-purple-400 to-purple-600 hover:from-purple-500 hover:to-purple-700 text-white shadow-lg"
                   style={{
                     width: '100%',

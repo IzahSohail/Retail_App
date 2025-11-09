@@ -87,7 +87,7 @@ export default function UploadCatalog({ businessInfo }) {
         <h2 className="text-2xl font-bold text-gray-800 mb-6">Upload Product Catalog</h2>
 
         <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-          <h3 className="font-semibold text-blue-900 mb-2">📋 Required Format</h3>
+          <h3 className="font-semibold text-blue-900 mb-2">Required Format</h3>
           <p className="text-sm text-blue-700 mb-2">Your catalog file must include the following columns:</p>
           <ul className="text-sm text-blue-700 list-disc list-inside space-y-1">
             <li><strong>title</strong> - Product name</li>
@@ -125,7 +125,7 @@ export default function UploadCatalog({ businessInfo }) {
                 {message.details && message.details.failedProducts && message.details.failedProducts.length > 0 && (
                   <div className="mt-3 pt-3 border-t border-red-200">
                     <p className="font-semibold text-red-800 mb-2">
-                      ⚠️ Failed to add {message.details.failedProducts.length} products:
+                      Failed to add {message.details.failedProducts.length} products:
                     </p>
                     <ul className="text-sm text-red-700 space-y-2 max-h-60 overflow-y-auto">
                       {message.details.failedProducts.map((item, idx) => (
