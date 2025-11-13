@@ -665,11 +665,15 @@ export default function AdminPanel() {
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold">
-                      {sales.length > 0 
-                        ? ((returns.filter(r => r.refunds && r.refunds.length > 0).length / sales.length) * 100).toFixed(1)
-                        : '0.0'}%
+                      {(() => {
+                        const totalRefunds = returns.reduce((sum, r) => sum + (r.refunds?.length || 0), 0);
+                        const completedSales = sales.filter(s => s.status === 'COMPLETED').length;
+                        return completedSales > 0 
+                          ? ((totalRefunds / completedSales) * 100).toFixed(1)
+                          : '0.0';
+                      })()}%
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">of total orders</p>
+                    <p className="text-xs text-gray-500 mt-1">refunds / completed orders</p>
                   </CardContent>
                 </Card>
               </div>

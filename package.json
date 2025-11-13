@@ -11,6 +11,8 @@
     "dev": "npm-run-all -p dev:backend dev:frontend",
     "dev:backend": "npm --prefix backend run dev",
     "dev:frontend": "npm --prefix frontend start",
+    "build": "npm --prefix frontend run build",
+    "build:backend": "npm --prefix backend run build",
     "test": "jest",
     "test:cart": "jest tests/integration/cart.test.js",
     "test:performance": "TEST_MODE=true node tests/performance/run-performance-test.js",

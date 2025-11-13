@@ -333,12 +333,8 @@ export default function ReturnsRefunds({ user }) {
                       className="w-full border border-gray-300 rounded-lg px-4 py-2"
                     >
                       <option value="">Select a reason...</option>
-                      <option value="Defective or damaged">Defective or damaged</option>
-                      <option value="Wrong item received">Wrong item received</option>
-                      <option value="Not as described">Not as described</option>
-                      <option value="Changed my mind">Changed my mind</option>
-                      <option value="Quality issues">Quality issues</option>
-                      <option value="Other">Other</option>
+                      <option value="item is defected">Item is defective or damaged</option>
+                      <option value="item is not what they were expecting">Item is not what I expected</option>
                     </select>
                   </div>
 

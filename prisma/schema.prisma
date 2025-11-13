@@ -74,6 +74,7 @@ model Product {
   saleItems      SaleItem[]
   cartItems      CartItem[]
   flashSaleItems FlashSaleItem[]
+  defectiveItems DefectiveItems[]
 
   @@index([categoryId])
   @@index([sellerId])
@@ -319,6 +320,7 @@ model ReturnRequest {
   inspections     Inspection[]
   refunds         Refund[]
   auditLogs       RmaAuditLog[]
+  defectiveItems  DefectiveItems[] @relation("ReturnDefectiveItems")
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
   completedAt     DateTime?    // Track completion date for cycle time metrics
@@ -418,4 +420,19 @@ model RmaAuditLog {
 
   @@index([returnRequestId])
   @@map("rma_audit_logs")
+}
+
+model DefectiveItems {
+  id               String        @id @default(cuid())
+  returnRequestId  String
+  productId        String
+  stock            Int
+ 
+  returnRequest    ReturnRequest @relation("ReturnDefectiveItems", fields: [returnRequestId], references: [id], onDelete: Cascade)
+  product          Product       @relation(fields: [productId], references: [id])
+ 
+  @@index([returnRequestId])
+  @@index([productId])
+  @@unique([returnRequestId, productId])
+  @@map("defective_items")
 }
