@@ -117,6 +117,19 @@ export const RmaService = {
     const status = action === 'authorize' ? 'APPROVED_AWAITING_SHIPMENT' : 'REJECTED';
     const updated = await prisma.returnRequest.update({ where: { id }, data: { status } });
     await prisma.rmaAuditLog.create({ data: { returnRequestId: id, actorId: actorId || null, action: `authorize:${action}`, message: message || null } });
+    
+    // Auto-update to SHIPPED after 5 seconds for demo purposes
+    if (action === 'authorize') {
+      setTimeout(async () => {
+        try {
+          await prisma.returnRequest.update({ where: { id }, data: { status: 'SHIPPED' } });
+          await prisma.rmaAuditLog.create({ data: { returnRequestId: id, actorId: actorId || null, action: 'status:shipped', message: 'Auto-updated to SHIPPED after 5 seconds (demo)' } });
+        } catch (error) {
+          console.error('Error auto-updating return request to SHIPPED:', error);
+        }
+      }, 5000);
+    }
+    
     return updated;
   },
 

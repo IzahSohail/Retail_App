@@ -242,12 +242,18 @@ const authConfig = {
         console.warn('[afterCallback] Missing auth0Id or email', { auth0Id, email });
       }
       
-      // Store redirect URL in session for business users
+      // Store redirect URL in session
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
       if (isBusiness) {
-        session.redirectTo = 'http://localhost:3000/business/dashboard';
-        req.session.redirectTo = 'http://localhost:3000/business/dashboard'; // Also store in req.session
+        session.redirectTo = `${frontendUrl}/business/dashboard`;
+        req.session.redirectTo = `${frontendUrl}/business/dashboard`;
         console.log(' [afterCallback] Set redirectTo in Auth0 session:', session.redirectTo);
         console.log(' [afterCallback] Set redirectTo in req.session:', req.session.redirectTo);
+      } else {
+        // Default redirect to frontend for all users
+        session.redirectTo = frontendUrl;
+        req.session.redirectTo = frontendUrl;
+        console.log(' [afterCallback] Set default redirectTo to frontend:', frontendUrl);
       }
       
       console.log(' [afterCallback] Final req.session before return:', JSON.stringify(req.session, null, 2));
@@ -395,7 +401,7 @@ app.get('/api/greet', (req, res) => {
 //create a route to retrieve products from the database, the idea is to retrieve 20 at a time 
 // and upon clicking a button like "see more", we retrieve more and show more
 app.get('/api/products', async (req, res) => {
-  console.log(prisma);
+  // console.log(prisma);
   try {
     const {
       limit = '20',

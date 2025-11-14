@@ -197,7 +197,7 @@ export default function ProductCard({ p, user, onLogin, onCartUpdate }) {
           <p className="text-xs text-gray-400">
             Listed {new Date(p.createdAt).toLocaleDateString()}
           </p>
-        </div>
+    </div>
       </CardContent>
     </Card>
   );
