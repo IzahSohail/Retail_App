@@ -1,29 +1,6 @@
 # ✅ Retail App - Checkpoint 3 Completion Report
 
-## � **QUICK START - Run Application**
-
-**Essential Commands to Run Everything:**
-
-```bash
-# 1. Navigate to project directory
-cd /Users/tereza/Downloads/Retail_App-checkpoint3
-
-# 2. Start complete application stack (MAIN COMMAND)
-docker compose up --build
-
-# 3. Access the application
-# Frontend: http://localhost:8000
-# Backend:  http://localhost:3001
-
-# 4. Run all tests (in separate terminal)
-npm test
-```
-
-**⚠️ IMPORTANT:** Always run `docker compose up --build` first to start all services before running tests or accessing the application.
-
----
-
-## �📊 Project Overview & Deliverables
+## 📊 Project Overview & Deliverables
 
 ### 🏗️ Architecture & Documentation
 **Process Refund System - Complete Implementation**
@@ -155,22 +132,11 @@ npm test
 - [x] **Docker Compose** - Multi-service orchestration
 - [x] **Environment Configuration** - Production-ready .env setup
 
-**🚀 Quick Start Commands:**
-```bash
-# Start the complete application stack
-docker compose up --build
-
-# Verify services are running
-curl http://localhost:3001/api/greet    # Backend health check
-curl http://localhost:8000              # Frontend check
-```
-
 **Development Workflow:**
 - [x] **Test Mode** - Integrated testing environment
 - [x] **Hot Reload** - Volume mounts for development
 - [x] **Health Checks** - Database connectivity validation
 - [x] **Port Configuration** - Frontend (8000), Backend (3001)
-- [x] **One-Command Deploy** - Complete stack startup with `docker compose up --build`
 
 ---
 
@@ -268,40 +234,6 @@ curl http://localhost:8000              # Frontend check
 ## 🎉 Status: CHECKPOINT 3 COMPLETE
 
 All requirements fulfilled with comprehensive testing, documentation, and production-ready implementation.
-
-### 🚀 **How to Run the Complete Application:**
-
-```bash
-# 1. Clone and navigate to project
-cd /Users/tereza/Downloads/Retail_App-checkpoint3
-
-# 2. Start complete application stack (REQUIRED)
-docker compose up --build
-
-# 3. Verify services are running
-curl http://localhost:3001/api/greet    # Backend verification  
-curl http://localhost:8000              # Frontend verification
-```
-
-### 🧪 **How to Run All Tests:**
-
-```bash
-# Run complete test suite
-npm test
-
-# Run individual test categories
-npx jest tests/unit/payment.test.js              # Unit tests
-npx jest tests/integration/cart.test.js          # Integration tests
-node tests/performance/run-performance-test.js   # Performance tests
-node tests/concurrency/run-concurrency-test.js  # Concurrency tests
-node tests/flash_sales/run-surge-test.js         # Flash sale surge tests
-```
-
-### 📋 **Application URLs:**
-- **Frontend:** http://localhost:8000
-- **Backend API:** http://localhost:3001
-- **Admin Panel:** http://localhost:8000/admin
-- **API Documentation:** http://localhost:3001/api/greet
 
 **Next Phase Ready:** Full deployment and user acceptance testing
 
