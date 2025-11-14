@@ -307,6 +307,27 @@ export default function AdminPanel() {
     }
   };
 
+  const handleStatusChange = async (returnId, newStatus) => {
+    try {
+      const res = await fetch(`/api/rma/${returnId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ status: newStatus })
+      });
+
+      if (res.ok) {
+        alert('Status updated successfully!');
+        loadData();
+      } else {
+        const data = await res.json();
+        alert('Error: ' + (data.error || 'Failed to update status'));
+      }
+    } catch (error) {
+      alert('Error: ' + error.message);
+    }
+  };
+
   if (loading) {
     return <div className="container mx-auto p-8">Loading...</div>;
   }
@@ -666,14 +687,14 @@ export default function AdminPanel() {
                   <CardContent>
                     <div className="text-2xl font-bold">
                       {(() => {
-                        const totalRefunds = returns.reduce((sum, r) => sum + (r.refunds?.length || 0), 0);
-                        const completedSales = sales.filter(s => s.status === 'COMPLETED').length;
-                        return completedSales > 0 
-                          ? ((totalRefunds / completedSales) * 100).toFixed(1)
+                        const refundedSales = sales.filter(s => s.status === 'REFUNDED').length;
+                        const totalOrders = sales.filter(s => s.status === 'COMPLETED' || s.status === 'REFUNDED').length;
+                        return totalOrders > 0 
+                          ? ((refundedSales / totalOrders) * 100).toFixed(1)
                           : '0.0';
                       })()}%
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">refunds / completed orders</p>
+                    <p className="text-xs text-gray-500 mt-1">refunded orders / total orders</p>
                   </CardContent>
                 </Card>
               </div>
@@ -787,31 +808,29 @@ export default function AdminPanel() {
                       </div>
                     )}
 
-                    <div className="flex gap-2 pt-4 border-t">
-                      {returnReq.status === 'INSPECTION' && (
-                        <>
-                          <Button
-                            onClick={() => handleReturnAction(returnReq.id, 'authorize')}
-                            size="sm"
-                            variant="default"
-                          >
-                            Approve Return
-                          </Button>
-                          <Button
-                            onClick={() => handleReturnAction(returnReq.id, 'reject')}
-                            size="sm"
-                            variant="destructive"
-                          >
-                            Reject Return
-                          </Button>
-                        </>
-                      )}
+                    <div className="flex gap-2 pt-4 border-t items-center">
+                      <div className="flex-1">
+                        <label className="text-sm font-medium text-gray-600 block mb-1">Update Status:</label>
+                        <select
+                          value={returnReq.status}
+                          onChange={(e) => handleStatusChange(returnReq.id, e.target.value)}
+                          className="w-full border border-gray-300 rounded px-3 py-1 text-sm"
+                        >
+                          <option value="INSPECTION">INSPECTION</option>
+                          <option value="APPROVED_AWAITING_SHIPMENT">APPROVED_AWAITING_SHIPMENT</option>
+                          <option value="REJECTED">REJECTED</option>
+                          <option value="SHIPPED">SHIPPED</option>
+                          <option value="COMPLETED">COMPLETED</option>
+                          <option value="CLOSED">CLOSED</option>
+                        </select>
+                      </div>
                       
                       {(returnReq.status === 'SHIPPED' || returnReq.status === 'APPROVED_AWAITING_SHIPMENT') && (
                         <Button
                           onClick={() => handleIssueRefund(returnReq.id)}
                           size="sm"
                           variant="default"
+                          className="mt-5"
                         >
                           Issue Refund
                         </Button>

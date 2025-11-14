@@ -102,4 +102,27 @@ router.post('/:id/refund', requiresAuth(), requireAdmin, async (req, res) => {
   }
 });
 
+// Admin: update return request status
+router.patch('/:id/status', requiresAuth(), requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+    
+    const validStatuses = ['INSPECTION', 'APPROVED_AWAITING_SHIPMENT', 'REJECTED', 'SHIPPED', 'COMPLETED', 'CLOSED'];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({ error: 'Invalid status' });
+    }
+
+    const updated = await prisma.returnRequest.update({
+      where: { id },
+      data: { status }
+    });
+
+    res.json({ success: true, rma: updated });
+  } catch (err) {
+    console.error('PATCH /api/rma/:id/status error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 export default router;

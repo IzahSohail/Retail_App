@@ -6,7 +6,7 @@ const RETURN_REASONS = {
   NOT_EXPECTED: 'item is not what they were expecting'
 };
 
-function normalizeReturnReason(input) {
+export function normalizeReturnReason(input) {
   const value = (input || '').trim();
   if (!value) {
     throw new Error('Return reason is required');
@@ -18,11 +18,11 @@ function normalizeReturnReason(input) {
   return match;
 }
 
-function sanitizeDetails(value) {
+export function sanitizeDetails(value) {
   return (value || '').trim();
 }
 
-function sanitizeQuantity(value) {
+export function sanitizeQuantity(value) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric) || numeric <= 0) {
     return 1;
@@ -117,19 +117,23 @@ export const RmaService = {
     const status = action === 'authorize' ? 'APPROVED_AWAITING_SHIPMENT' : 'REJECTED';
     const updated = await prisma.returnRequest.update({ where: { id }, data: { status } });
     await prisma.rmaAuditLog.create({ data: { returnRequestId: id, actorId: actorId || null, action: `authorize:${action}`, message: message || null } });
-    
-    // Auto-update to SHIPPED after 5 seconds for demo purposes
-    if (action === 'authorize') {
-      setTimeout(async () => {
-        try {
-          await prisma.returnRequest.update({ where: { id }, data: { status: 'SHIPPED' } });
-          await prisma.rmaAuditLog.create({ data: { returnRequestId: id, actorId: actorId || null, action: 'status:shipped', message: 'Auto-updated to SHIPPED after 5 seconds (demo)' } });
-        } catch (error) {
-          console.error('Error auto-updating return request to SHIPPED:', error);
-        }
-      }, 5000);
+    return updated;
+  },
+
+  async updateStatus(id, status, actorId) {
+    const validStatuses = ['INSPECTION', 'APPROVED_AWAITING_SHIPMENT', 'REJECTED', 'SHIPPED', 'COMPLETED', 'CLOSED'];
+    if (!validStatuses.includes(status)) {
+      throw new Error('Invalid status');
     }
-    
+    const updated = await prisma.returnRequest.update({ where: { id }, data: { status } });
+    await prisma.rmaAuditLog.create({ 
+      data: { 
+        returnRequestId: id, 
+        actorId: actorId || null, 
+        action: `status:updated`, 
+        message: `Status changed to ${status}` 
+      } 
+    });
     return updated;
   },
 
