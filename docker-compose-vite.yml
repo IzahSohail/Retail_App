@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  # Backend Service - serves both API and frontend on port 3001
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.vite
+    container_name: retail-backend
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 3001
+      # Use Aiven cloud database
+      DATABASE_URL: ${DATABASE_URL}
+      SHADOW_DATABASE_URL: ${SHADOW_DATABASE_URL}
+      # Auth0 Configuration
+      AUTH0_SECRET: ${AUTH0_SECRET}
+      AUTH0_BASE_URL: ${AUTH0_BASE_URL:-http://localhost:3001}
+      AUTH0_CLIENT_ID: ${AUTH0_CLIENT_ID}
+      AUTH0_CLIENT_SECRET: ${AUTH0_CLIENT_SECRET}
+      AUTH0_ISSUER_BASE_URL: ${AUTH0_ISSUER_BASE_URL}
+      APP_SESSION_SECRET: ${APP_SESSION_SECRET}
+      TEST_MODE: ${TEST_MODE:-false}
+      # Supabase for image uploads
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_KEY: ${SUPABASE_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      SUPABASE_BUCKET: ${SUPABASE_BUCKET:-products}
+    volumes:
+      # Mount source for development hot reload
+      - ./backend/src:/app/src
+      - ./prisma:/app/prisma
+      # Shared volume for frontend build
+      - frontend_build:/app/frontend_build
+    networks:
+      - retail-network
+    depends_on:
+      - frontend-build
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3001/api/greet"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # Frontend Build Service - builds once and exits
+  frontend-build:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.build
+      target: build
+    container_name: retail-frontend-build
+    volumes:
+      - frontend_build:/app/build
+    networks:
+      - retail-network
+
+volumes:
+  frontend_build:
+    driver: local
+
+networks:
+  retail-network:
+    driver: bridge

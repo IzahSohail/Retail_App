@@ -5,7 +5,7 @@ import { Button } from '../components/ui/button';
 export default function BusinessRegister() {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
-  const backendBase = process.env.REACT_APP_BACKEND_BASE || 'http://localhost:3001';
+  const backendBase = import.meta.env.VITE_BACKEND_BASE || 'http://localhost:3001';
 
   useEffect(() => {
     // Check if user is already logged in

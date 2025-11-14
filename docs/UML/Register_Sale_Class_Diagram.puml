@@ -1,0 +1,347 @@
+@startuml Register_Sale_Class_Diagram
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam shadowing false
+skinparam classAttributeIconSize 0
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+
+title Class Diagram: Register a Sale / Purchase
+
+package "Controllers" <<Rectangle>> {
+  class PurchaseController {
+    - app: Express
+    - paymentService: PaymentService
+    + handleDirectPurchase(req, res)
+    + handleCartCheckout(req, res)
+    + validateAuth(req): User
+  }
+  
+  class CartController {
+    + addToCart(req, res)
+    + updateQuantity(req, res)
+    + removeItem(req, res)
+    + getCart(req, res)
+  }
+  
+  note right of PurchaseController
+    Implemented as route handlers in server.js:
+    - POST /api/purchase (line 785)
+    - POST /api/cart/checkout (line 1334)
+  end note
+}
+
+package "Services" <<Rectangle>> {
+  class PaymentService {
+    - adapter: MockPaymentAdapter
+    - maxRetries: number = 3
+    - retryDelay: number = 1000
+    - retryBackoffMultiplier: number = 2
+    - circuitBreaker: CircuitBreakerState
+    - paymentCache: Map<string, PaymentResult>
+    
+    + processPayment(request: PaymentRequest): Promise<PaymentResult>
+    + refundPayment(transactionId, amount): Promise<RefundResult>
+    - _canAttemptPayment(): boolean
+    - _recordSuccess(): void
+    - _recordFailure(): void
+    - _calculateBackoff(attempt): number
+    - _delay(ms): Promise<void>
+  }
+  
+  class MockPaymentAdapter {
+    - failureRate: number
+    - networkErrorRate: number
+    - processingDelay: number
+    - transactions: Map<string, Transaction>
+    
+    + processPayment(request): Promise<PaymentResult>
+    + refundPayment(txnId, amount): Promise<RefundResult>
+    + getTransaction(txnId): Transaction
+    - _shouldSimulateFailure(): boolean
+    - _shouldSimulateNetworkError(): boolean
+  }
+  
+  class PricingService {
+    + calculateDiscountedPrice(price, type, value): PricingResult
+    + calculateOrderTotal(items, options): OrderTotal
+    + formatPrice(price, options): string
+    + toMinorUnits(amount): number
+    + toMajorUnits(amount): number
+  }
+  
+  class FlashSaleService {
+    + getActiveFlashSales(date): FlashSale[]
+    + applyDiscounts(items, flashSales): DiscountedItem[]
+    + isProductInFlashSale(productId): boolean
+  }
+  
+  note right of PaymentService
+    Features:
+    - Retry with exponential backoff
+    - Circuit breaker (5 failures → OPEN)
+    - Idempotency caching
+    - 60s timeout before half-open
+  end note
+}
+
+package "Domain Models" <<Rectangle>> {
+  class User {
+    + id: string
+    + auth0Id: string
+    + email: string
+    + name: string
+    + picture: string
+    + role: UserRole
+    + creditMinor: number
+    + verified: boolean
+    + createdAt: Date
+    + lastLogin: Date
+  }
+  
+  class Product {
+    + id: string
+    + title: string
+    + description: string
+    + priceMinor: number
+    + currency: string
+    + stock: number
+    + active: boolean
+    + sellerId: string
+    + categoryId: string
+    + imageUrl: string
+    + createdAt: Date
+    + updatedAt: Date
+  }
+  
+  class Sale {
+    + id: string
+    + buyerId: string
+    + status: SaleStatus
+    + subtotalMinor: number
+    + taxMinor: number
+    + feesMinor: number
+    + totalMinor: number
+    + currency: string
+    + idempotencyKey: string
+    + createdAt: Date
+    + completedAt: Date
+    + canceledAt: Date
+  }
+  
+  class SaleItem {
+    + id: string
+    + saleId: string
+    + productId: string
+    + quantity: number
+    + unitMinor: number
+    + lineTotalMinor: number
+    + createdAt: Date
+  }
+  
+  class Payment {
+    + id: string
+    + saleId: string
+    + method: PaymentMethod
+    + status: PaymentStatus
+    + approvalRef: string
+    + failureReason: string
+    + createdAt: Date
+    + updatedAt: Date
+  }
+  
+  class Cart {
+    + id: string
+    + userId: string
+    + createdAt: Date
+    + updatedAt: Date
+  }
+  
+  class CartItem {
+    + id: string
+    + cartId: string
+    + productId: string
+    + quantity: number
+    + createdAt: Date
+    + updatedAt: Date
+  }
+  
+  class FlashSale {
+    + id: string
+    + title: string
+    + description: string
+    + discountType: DiscountType
+    + discountValue: number
+    + startsAt: Date
+    + endsAt: Date
+    + createdById: string
+    + createdAt: Date
+  }
+  
+  class FlashSaleItem {
+    + id: string
+    + flashSaleId: string
+    + productId: string
+    + createdAt: Date
+  }
+  
+  enum UserRole {
+    USER
+    BUSINESS
+    ADMIN
+  }
+  
+  enum SaleStatus {
+    PENDING
+    COMPLETED
+    CANCELED
+  }
+  
+  enum PaymentMethod {
+    CARD
+    CASH
+    STORE_CREDIT
+  }
+  
+  enum PaymentStatus {
+    PENDING
+    APPROVED
+    DECLINED
+    ERROR
+  }
+  
+  enum DiscountType {
+    PERCENTAGE
+    FIXED
+  }
+  
+  note right of Sale
+    Three-Phase Lifecycle:
+    1. PENDING - Stock reserved
+    2. COMPLETED - Payment approved
+    3. CANCELED - Payment failed/rolled back
+  end note
+}
+
+package "Data Transfer Objects" <<Rectangle>> {
+  class PaymentRequest {
+    + amount: number
+    + currency: string
+    + paymentMethod: PaymentMethod
+    + idempotencyKey: string
+  }
+  
+  class PaymentResult {
+    + success: boolean
+    + status: PaymentStatus
+    + transactionId: string
+    + message: string
+  }
+  
+  class CircuitBreakerState {
+    + state: CircuitState
+    + failureCount: number
+    + successCount: number
+    + lastFailureTime: Date
+    + failureThreshold: number = 5
+    + successThreshold: number = 2
+    + timeout: number = 60000
+  }
+  
+  enum CircuitState {
+    CLOSED
+    OPEN
+    HALF_OPEN
+  }
+}
+
+package "Repositories" <<Rectangle>> {
+  interface ISaleRepository {
+    + create(data): Promise<Sale>
+    + findById(id): Promise<Sale>
+    + findByIdempotencyKey(key): Promise<Sale>
+    + update(id, data): Promise<Sale>
+  }
+  
+  interface IProductRepository {
+    + findById(id): Promise<Product>
+    + updateStock(id, delta): Promise<Product>
+    + reserveStockAtomic(id, qty): Promise<boolean>
+  }
+  
+  interface ICartRepository {
+    + findByUserId(userId): Promise<Cart>
+    + addItem(cartId, productId, qty): Promise<CartItem>
+    + updateItem(itemId, qty): Promise<CartItem>
+    + removeItem(itemId): Promise<void>
+    + clearCart(cartId): Promise<void>
+  }
+  
+  interface IPaymentRepository {
+    + create(data): Promise<Payment>
+    + findBySaleId(saleId): Promise<Payment>
+  }
+  
+  interface IUserRepository {
+    + findById(id): Promise<User>
+    + findByAuth0Id(auth0Id): Promise<User>
+    + upsert(data): Promise<User>
+    + updateCredits(userId, delta): Promise<User>
+  }
+  
+  note right of ISaleRepository
+    Implemented using Prisma ORM
+    in server.js with prisma.sale.*
+  end note
+}
+
+' Relationships - Aggregation/Composition
+User "1" -- "0..*" Sale : buyer >
+User "1" -- "0..*" Product : seller >
+User "1" -- "0..1" Cart : owns >
+
+Sale "1" *-- "1..*" SaleItem : contains >
+Sale "1" *-- "0..1" Payment : has >
+
+Cart "1" *-- "0..*" CartItem : contains >
+CartItem "0..*" -- "1" Product : references >
+SaleItem "0..*" -- "1" Product : references >
+
+FlashSale "1" *-- "0..*" FlashSaleItem : includes >
+FlashSaleItem "0..*" -- "1" Product : targets >
+
+' Controller Dependencies
+PurchaseController ..> PaymentService : uses
+PurchaseController ..> PricingService : uses
+PurchaseController ..> FlashSaleService : uses
+PurchaseController ..> ISaleRepository : uses
+PurchaseController ..> IProductRepository : uses
+PurchaseController ..> IUserRepository : uses
+
+CartController ..> ICartRepository : uses
+CartController ..> IProductRepository : uses
+
+' Service Dependencies
+PaymentService "1" *-- "1" MockPaymentAdapter : adapter
+PaymentService ..> PaymentRequest : accepts
+PaymentService ..> PaymentResult : returns
+PaymentService "1" *-- "1" CircuitBreakerState : manages
+
+FlashSaleService ..> FlashSale : queries
+FlashSaleService ..> FlashSaleItem : queries
+
+' Repository Implementations (Prisma)
+ISaleRepository <|.. "PrismaSaleRepo" : implements
+IProductRepository <|.. "PrismaProductRepo" : implements
+ICartRepository <|.. "PrismaCartRepo" : implements
+IPaymentRepository <|.. "PrismaPaymentRepo" : implements
+IUserRepository <|.. "PrismaUserRepo" : implements
+
+note bottom of "PrismaSaleRepo"
+  Actual implementation is inline
+  in server.js using prisma client:
+  await prisma.sale.create(...)
+  await prisma.sale.update(...)
+end note
+
+@enduml

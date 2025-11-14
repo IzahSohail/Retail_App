@@ -67,7 +67,7 @@ export default function App() {
     updateCartCount();
   }, [updateCartCount]);
 
-  const backendBase = (process.env.REACT_APP_BACKEND_BASE || 'http://localhost:3001');
+  const backendBase = (import.meta.env.VITE_BACKEND_BASE || 'http://localhost:3001');
 
   const handleLogin = () => { window.location.href = `${backendBase}/login`; };
   const handleLogout = () => { window.location.href = `${backendBase}/logout`; };

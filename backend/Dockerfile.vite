@@ -1,0 +1,51 @@
+# Backend Dockerfile for Retail App (Single Server Setup)
+
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install dependencies for Prisma, healthcheck, and wget
+RUN apk add --no-cache openssl wget
+
+# Copy package files from backend directory
+COPY backend/package*.json ./
+
+# Install dependencies
+RUN npm install
+
+# Copy backend source code
+COPY backend/src ./src
+
+# Copy Prisma schema from project root
+COPY prisma ./prisma
+
+# Generate Prisma Client
+RUN npx prisma generate --schema=./prisma/schema.prisma
+
+# Expose backend port
+EXPOSE 3001
+
+# Create an entrypoint script for migrations and startup
+RUN echo '#!/bin/sh' > /entrypoint.sh && \
+    echo 'set -e' >> /entrypoint.sh && \
+    echo 'echo "🔄 Regenerating Prisma Client..."' >> /entrypoint.sh && \
+    echo 'npx prisma generate --schema=./prisma/schema.prisma' >> /entrypoint.sh && \
+    echo 'echo "✅ Prisma Client generated"' >> /entrypoint.sh && \
+    echo '' >> /entrypoint.sh && \
+    echo 'echo "🔄 Running database migrations..."' >> /entrypoint.sh && \
+    echo 'npx prisma migrate deploy --schema=./prisma/schema.prisma' >> /entrypoint.sh && \
+    echo 'echo "✅ Migrations complete"' >> /entrypoint.sh && \
+    echo '' >> /entrypoint.sh && \
+    echo '# Check for frontend build' >> /entrypoint.sh && \
+    echo 'if [ -d "/app/frontend_build" ] && [ -f "/app/frontend_build/index.html" ]; then' >> /entrypoint.sh && \
+    echo '  echo "✅ Frontend build found at /app/frontend_build"' >> /entrypoint.sh && \
+    echo '  ls -la /app/frontend_build' >> /entrypoint.sh && \
+    echo 'else' >> /entrypoint.sh && \
+    echo '  echo "⚠️  Frontend build not found. Checked: /app/frontend_build"' >> /entrypoint.sh && \
+    echo 'fi' >> /entrypoint.sh && \
+    echo '' >> /entrypoint.sh && \
+    echo 'echo "🚀 Starting server on port 3001..."' >> /entrypoint.sh && \
+    echo 'exec npm run dev' >> /entrypoint.sh && \
+    chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]

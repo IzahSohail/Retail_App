@@ -1,0 +1,76 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: retail-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-retailuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-retailpass}
+      POSTGRES_DB: ${POSTGRES_DB:-retaildb}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - retail-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-retailuser} -d ${POSTGRES_DB:-retaildb}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: retail-backend
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      # Use DATABASE_URL from .env (Aiven cloud) or fall back to local postgres
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-retailuser}:${POSTGRES_PASSWORD:-retailpass}@postgres:5432/${POSTGRES_DB:-retaildb}?schema=public}
+      AUTH0_SECRET: ${AUTH0_SECRET}
+      AUTH0_BASE_URL: ${AUTH0_BASE_URL:-http://localhost:3001}
+      AUTH0_CLIENT_ID: ${AUTH0_CLIENT_ID}
+      AUTH0_CLIENT_SECRET: ${AUTH0_CLIENT_SECRET}
+      AUTH0_ISSUER_BASE_URL: ${AUTH0_ISSUER_BASE_URL}
+      APP_SESSION_SECRET: ${APP_SESSION_SECRET:-${AUTH0_SECRET}}
+      TEST_MODE: ${TEST_MODE:-false}
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_KEY: ${SUPABASE_KEY:-${SUPABASE_SERVICE_ROLE_KEY}}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      SUPABASE_BUCKET: ${SUPABASE_BUCKET:-products}
+    depends_on:
+      - postgres
+    volumes:
+      - ./backend/src:/app/src
+      - ./prisma:/app/prisma
+    networks:
+      - retail-network
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: retail-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - retail-network
+    environment:
+      # Support both CRA and Vite
+      REACT_APP_API_URL: ${REACT_APP_API_URL:-http://localhost:3001}
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:3001}
+
+volumes:
+  postgres_data:
+
+networks:
+  retail-network:
+    driver: bridge

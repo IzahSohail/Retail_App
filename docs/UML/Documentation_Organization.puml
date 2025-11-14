@@ -1,0 +1,133 @@
+@startuml Documentation_Organization
+!theme plain
+skinparam backgroundColor #FFFFFF
+
+title Retail App - Documentation Organization
+
+package "Root Documentation" {
+    [readme.md] as MainReadme
+    [DOCKER_README.md] as DockerReadme
+    [DOCKER_QUICKSTART.md] as DockerQuick
+}
+
+package "docs/" {
+    [README.md] as DocsIndex
+    
+    package "docs/UML/" {
+        [README.md] as UMLIndex
+        
+        package "Process Refund Use Case" {
+            [Process_Refund_MSS.md] as MSS
+            [Process_Refund_SSD.puml] as SSD
+            [Process_Refund_SSD_Detailed.md] as SSDDetail
+            [Process_Refund_Class_Diagram.puml] as ClassDiagram
+            [Process_Refund_Deployment_Diagram.puml] as DeployDiagram
+            [Process_Refund_Complete_Summary.md] as Summary
+            [Process_Refund_Quick_Reference.md] as QuickRef
+        }
+    }
+    
+    package "docs/ADRs/" {
+        [Architecture Decision Records] as ADRs
+    }
+}
+
+package "Source Code" {
+    package "backend/" {
+        [src/routes/rma.js] as RMARoutes
+        [src/services/rmaService.js] as RMAService
+        [src/server.js] as Server
+    }
+    
+    package "frontend/" {
+        [src/components/ReturnRefunds.jsx] as RefundComponent
+        [src/components/...] as OtherComponents
+    }
+    
+    package "prisma/" {
+        [schema.prisma] as Schema
+    }
+    
+    [docker-compose-vite.yml] as DockerCompose
+}
+
+' Main navigation paths
+MainReadme -down-> DocsIndex : "links to"
+MainReadme -down-> DockerReadme : "links to"
+DockerReadme -down-> DockerQuick : "references"
+
+DocsIndex -down-> UMLIndex : "references"
+DocsIndex -down-> ADRs : "references"
+
+UMLIndex -down-> Summary : "⭐ Start here"
+Summary -down-> MSS : "describes"
+Summary -down-> SSD : "describes"
+Summary -down-> ClassDiagram : "describes"
+Summary -down-> DeployDiagram : "describes"
+
+UMLIndex -down-> QuickRef : "quick access"
+
+' Cross-references between diagrams
+MSS -right-> SSD : "traced to"
+SSD -right-> ClassDiagram : "implements"
+ClassDiagram -right-> DeployDiagram : "deployed as"
+
+' Documentation to code mapping
+SSD -down-> RMARoutes : "messages\nimplemented in"
+ClassDiagram -down-> RMAService : "classes\nimplemented in"
+DeployDiagram -down-> DockerCompose : "described in"
+MSS -down-> RefundComponent : "UI in"
+ClassDiagram -down-> Schema : "models\ndefined in"
+
+' Detail documents
+SSD --> SSDDetail : "detailed in"
+
+note right of Summary
+  **Recommended Entry Point**
+  Complete overview linking
+  all diagrams and code
+end note
+
+note right of QuickRef
+  **Quick Reference**
+  Print-friendly cheat sheet
+  for developers
+end note
+
+note bottom of MSS
+  Business Requirements
+  - 8-step process
+  - Business rules
+  - Alternative/Exception flows
+end note
+
+note bottom of SSD
+  System Interactions
+  - Actor messages
+  - System responses
+  - Internal operations
+end note
+
+note bottom of ClassDiagram
+  System Structure
+  - 4 layers
+  - Domain models
+  - Repositories
+  - Services
+end note
+
+note bottom of DeployDiagram
+  Physical Architecture
+  - Docker containers
+  - Networks
+  - External services
+end note
+
+legend right
+  |= Symbol |= Meaning |
+  | → | Navigation link |
+  | -down-> | References/Contains |
+  | ⭐ | Recommended starting point |
+endlegend
+
+@enduml

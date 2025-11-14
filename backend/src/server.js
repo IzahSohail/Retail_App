@@ -1729,17 +1729,47 @@ app.use('/api/rma', rmaRouter);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..');
-const frontendDir = path.join(projectRoot, '..', 'frontend', 'build');
-const indexHtmlPath = path.join(frontendDir, 'index.html');
 
-if (fs.existsSync(indexHtmlPath)) {
+// Check multiple possible frontend build locations
+const possibleFrontendDirs = [
+  path.join(projectRoot, '..', 'frontend', 'build'), // Local development
+  '/app/frontend_build', // Docker volume mount
+  path.join(projectRoot, 'frontend_build') // Alternative Docker path
+];
+
+let frontendDir = null;
+let indexHtmlPath = null;
+
+for (const dir of possibleFrontendDirs) {
+  const testPath = path.join(dir, 'index.html');
+  if (fs.existsSync(testPath)) {
+    frontendDir = dir;
+    indexHtmlPath = testPath;
+    console.log('✅ Serving frontend from:', frontendDir);
+    break;
+  }
+}
+
+if (frontendDir && indexHtmlPath) {
   app.use(express.static(frontendDir));
   app.get('*', (_req, res) => {
     res.sendFile(indexHtmlPath);
   });
 } else {
+  console.log('⚠️  Frontend build not found. Checked locations:');
+  possibleFrontendDirs.forEach(dir => console.log('  -', dir));
   app.get('/', (_req, res) => {
-    res.redirect('http://localhost:3000');
+    res.json({ 
+      message: 'Retail App Backend API',
+      note: 'Frontend not built yet. Run: npm run build in frontend directory',
+      endpoints: {
+        products: '/api/products',
+        cart: '/api/cart', 
+        profile: '/api/profile',
+        admin: '/api/admin',
+        rma: '/api/rma'
+      }
+    });
   });
 }
 
