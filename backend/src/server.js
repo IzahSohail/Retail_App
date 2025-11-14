@@ -1075,7 +1075,27 @@ app.get('/api/purchases', requiresAuth(), async (req, res) => {
       }
     });
 
-    res.json({ success: true, purchases });
+    // Get all return requests for this user to filter out purchases that already have returns
+    const returnRequests = await prisma.returnRequest.findMany({
+      where: {
+        userId: user.id,
+        status: {
+          notIn: ['CLOSED', 'REJECTED']
+        }
+      },
+      select: {
+        saleId: true
+      }
+    });
+
+    const saleIdsWithActiveReturns = new Set(returnRequests.map(r => r.saleId));
+
+    // Filter out purchases that have active return requests or are already refunded
+    const availablePurchases = purchases.filter(purchase => {
+      return !saleIdsWithActiveReturns.has(purchase.id) && purchase.status !== 'REFUNDED';
+    });
+
+    res.json({ success: true, purchases: availablePurchases });
   } catch (err) {
     console.error('GET /api/purchases error:', err);
     res.status(500).json({ error: 'Failed to load purchases' });
