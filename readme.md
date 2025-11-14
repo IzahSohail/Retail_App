@@ -162,7 +162,43 @@ Or from root:
 npm run dev
 ```
 
-### 6) Deploy & Push (Aiven Cloud)
+### 6) Docker Setup (Optional)
+
+**Prerequisites:**
+- Docker Desktop installed
+- Docker Compose (comes with Docker Desktop)
+
+**Quick Start:**
+```bash
+# Start all services (backend, frontend, postgres)
+docker-compose up --build
+
+# Start in background
+docker-compose up -d
+
+# Stop all services
+docker-compose down
+
+# View logs
+docker-compose logs -f backend
+```
+
+**Database Operations:**
+```bash
+# Seed the database
+docker-compose exec backend node src/seed.js
+
+# Run migrations
+docker-compose exec backend npx prisma migrate deploy
+```
+
+**Access:**
+- Application: http://localhost:3001
+- Database: PostgreSQL on port 5433 (mapped from container port 5432)
+
+**Note:** Ensure your `.env` file is configured before starting Docker containers. For detailed Docker documentation, see `Docker guides/` folder.
+
+### 7) Deploy & Push (Aiven Cloud)
 
 1. Deploy the backend (Render/Railway/Vercel/VM).
 2. Set Aiven env vars in your deployment.
@@ -190,6 +226,10 @@ npm run test:refund          # Refund validation unit tests
 npm run test:cart           # Cart integration tests
 
 # Performance tests (requires backend running with TEST_MODE=true)
+# First, start the backend with test mode:
+TEST_MODE=true npm run dev:backend
+
+# Then in another terminal, run performance tests:
 npm run test:performance    # High-volume product upload test
 npm run test:flashsales     # Flash sales surge test
 ```
