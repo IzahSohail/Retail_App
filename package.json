@@ -10,7 +10,7 @@
     "postinstall": "npm --prefix backend install && npm --prefix frontend install",
     "dev": "npm-run-all -p dev:backend dev:frontend",
     "dev:backend": "npm --prefix backend run dev",
-    "dev:frontend": "npm --prefix frontend start",
+    "dev:frontend": "npm --prefix frontend run dev",
     "test": "jest",
     "test:cart": "jest tests/integration/cart.test.js",
     "test:performance": "TEST_MODE=true node tests/performance/run-performance-test.js",

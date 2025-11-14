@@ -1,0 +1,156 @@
+@startuml Process_Refund_Deployment_Diagram
+!theme plain
+skinparam backgroundColor #FFFFFF
+
+title Deployment Diagram - Dockerized Retail App System
+
+node "Client Browser" as Browser {
+    component "React App\n(Vite Build)" as ReactApp
+}
+
+node "Docker Host" as DockerHost {
+    
+    node "<<Docker Container>>\nFrontend Container" as FrontendContainer {
+        component "Nginx Server" as Nginx {
+            artifact "Static Assets\n(HTML, CSS, JS)" as StaticFiles
+        }
+        note right of Nginx
+            Port: 80
+            Serves React build
+        end note
+    }
+    
+    node "<<Docker Container>>\nBackend Container" as BackendContainer {
+        component "Node.js Runtime" as NodeRuntime {
+            component "Express Server" as Express {
+                component "RefundController" as RefundCtrl
+                component "AdminController" as AdminCtrl
+            }
+            component "RefundService" as RefundSvc
+            component "RefundProcessor" as RefundProc
+            component "PaymentService" as PaymentSvc
+            component "CreditService" as CreditSvc
+            component "MetricsService" as MetricsSvc
+            component "MonitoringService" as MonitorSvc
+        }
+        database "Prisma ORM" as Prisma
+        note right of BackendContainer
+            Port: 3001
+            Environment: Node 20-alpine
+            Runs: npm run dev
+        end note
+    }
+    
+    node "<<Docker Container>>\nDatabase Container" as DatabaseContainer {
+        database "PostgreSQL\n(Aiven Cloud)" as PostgreSQL {
+            storage "Orders Table" as OrdersDB
+            storage "RefundRequests Table" as RefundsDB
+            storage "Payments Table" as PaymentsDB
+            storage "Credits Table" as CreditsDB
+            storage "DefectiveItems Table" as DefectiveDB
+            storage "Metrics Table" as MetricsDB
+        }
+        note right of DatabaseContainer
+            Host: Aiven Cloud
+            Port: 19447
+            Database: retail_app_clean
+            SSL: Required
+        end note
+    }
+    
+    node "<<Docker Volume>>\nfrontend_build" as FrontendVolume {
+        artifact "Vite Build Output" as ViteBuild
+    }
+    
+    cloud "External Services" as External {
+        node "Auth0" as Auth0 {
+            component "Authentication\nService" as AuthService
+        }
+        node "Supabase" as Supabase {
+            storage "Product Images\nBucket" as ImageStorage
+        }
+        node "Payment Gateway" as PaymentGateway {
+            component "Card Refund\nProcessor" as CardRefund
+        }
+    }
+}
+
+node "<<Docker Network>>\nretail-network" as Network {
+    note right
+        Bridge network
+        Connects all containers
+    end note
+}
+
+' Browser connections
+Browser -down-> FrontendContainer : "HTTP/HTTPS\n(Port 3000)"
+Browser -down-> BackendContainer : "HTTP REST API\n(Port 3001)"
+
+' Frontend to Backend
+FrontendContainer -down-> BackendContainer : "API Calls\n/api/*"
+
+' Backend to Database
+BackendContainer -down-> DatabaseContainer : "TCP/IP\nPostgreSQL Protocol\n(Port 19447, SSL)"
+
+' Backend to External Services
+BackendContainer -right-> Auth0 : "HTTPS\nOAuth 2.0"
+BackendContainer -right-> Supabase : "HTTPS\nREST API"
+BackendContainer -right-> PaymentGateway : "HTTPS\nRefund API"
+
+' Volume mounts
+FrontendVolume -up-> BackendContainer : "Mounted at\n/app/frontend_build"
+FrontendVolume -up-> FrontendContainer : "Build artifacts"
+
+' Network connections
+Network .down.> FrontendContainer : connects
+Network .down.> BackendContainer : connects
+Network .down.> DatabaseContainer : connects
+
+' Internal Backend connections
+Express -down-> RefundSvc : uses
+Express -down-> PaymentSvc : uses
+Express -down-> MetricsSvc : uses
+RefundSvc -down-> Prisma : queries via
+PaymentSvc -down-> Prisma : queries via
+CreditSvc -down-> Prisma : queries via
+Prisma -down-> PostgreSQL : connects to
+
+' Database to Tables
+PostgreSQL -down-> OrdersDB : contains
+PostgreSQL -down-> RefundsDB : contains
+PostgreSQL -down-> PaymentsDB : contains
+PostgreSQL -down-> CreditsDB : contains
+PostgreSQL -down-> DefectiveDB : contains
+PostgreSQL -down-> MetricsDB : contains
+
+' Monitoring
+MonitorSvc -up-> MetricsSvc : tracks
+MonitorSvc .right.> External : "sends logs\n(optional)"
+
+note bottom of DockerHost
+    Docker Compose Configuration:
+    - docker-compose-vite.yml
+    - Services: frontend-build, backend
+    - Volumes: frontend_build
+    - Networks: retail-network
+    - Health checks enabled
+end note
+
+note top of Browser
+    Client devices:
+    - Desktop browsers
+    - Mobile browsers
+    - Tablets
+end note
+
+legend right
+    |= Symbol |= Meaning |
+    | → | Synchronous connection |
+    | ..> | Asynchronous/Optional |
+    | --- | Data flow |
+    | <<Container>> | Docker container |
+    | <<Volume>> | Docker volume |
+    | <<Network>> | Docker network |
+endlegend
+
+@enduml

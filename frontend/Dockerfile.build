@@ -1,0 +1,22 @@
+# Frontend Dockerfile for Vite Build (optimized for single-server setup)
+
+# Build stage
+FROM node:20-alpine as build
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies with legacy peer deps
+RUN npm install --legacy-peer-deps
+
+# Copy application source
+COPY . .
+
+# Build the React app with Vite
+RUN npm run build
+
+# This stage just builds and the volume will contain the build artifacts
+# The backend server will serve these static files
+CMD ["sh", "-c", "echo '✅ Frontend build complete' && tail -f /dev/null"]

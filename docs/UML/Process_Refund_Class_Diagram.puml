@@ -1,0 +1,305 @@
+@startuml Process_Refund_Class_Diagram
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam classAttributeIconSize 0
+
+title Class Diagram - Refund Management System
+
+package "Controllers (Presentation Layer)" {
+    class RefundController {
+        - refundService: RefundService
+        + submitRefundRequest(orderId, productId, reason): RefundRequest
+        + getPendingRefunds(): List<RefundRequest>
+        + reviewRefundRequest(refundId): RefundDetails
+        + approveRefund(refundId, method): Result
+        + markDefective(refundId, defectType, description): Result
+        + denyRefund(refundId, reason): Result
+        + checkRefundStatus(refundId): RefundStatus
+        + getRefundMetrics(): MetricsReport
+    }
+    
+    class AdminController {
+        - refundService: RefundService
+        - monitoringService: MonitoringService
+        + showRefundDashboard(): DashboardView
+        + showUpdatedRefundStatus(refundId): RefundStatusView
+    }
+}
+
+package "Services (Business Logic Layer)" {
+    class RefundService {
+        - refundRepository: RefundRepository
+        - orderRepository: OrderRepository
+        - paymentService: PaymentService
+        - creditService: CreditService
+        - defectiveItemRepository: DefectiveItemRepository
+        - metricsService: MetricsService
+        + createRefundRequest(orderId, productId, reason): RefundRequest
+        + validateRefundRequest(refundId): boolean
+        + processRefund(refundId, method): Result
+        + issueCredit(customerId, amount): Credit
+        + processCardRefund(paymentId, amount): RefundTransaction
+        + recordDefectiveItem(refundId, defectType, description): DefectiveItem
+        + updateRefundStatus(refundId, status): void
+        + getRefundDetails(refundId): RefundDetails
+    }
+    
+    class RefundProcessor {
+        - paymentGateway: PaymentGateway
+        - creditSystem: CreditSystem
+        + processCredit(customerId, amount): CreditTransaction
+        + processCardRefund(payment, amount): RefundTransaction
+        + validateRefundEligibility(order): boolean
+    }
+    
+    class MetricsService {
+        - metricsRepository: MetricsRepository
+        + updateMetrics(refundId, type): void
+        + getRefundMetrics(): MetricsReport
+        + trackRefundApproval(refundId): void
+        + trackDefectiveItem(productId): void
+    }
+    
+    class MonitoringService {
+        + logRefundActivity(refundId, action, userId): void
+        + generateAuditTrail(refundId): AuditLog
+    }
+    
+    class PaymentService {
+        - paymentRepository: PaymentRepository
+        + getPaymentByOrderId(orderId): Payment
+        + processRefund(payment, amount): RefundTransaction
+        + updatePaymentStatus(paymentId, status): void
+    }
+    
+    class CreditService {
+        - creditRepository: CreditRepository
+        + issueCredit(customerId, amount, reason): Credit
+        + getCreditBalance(customerId): decimal
+        + updateCreditBalance(customerId, amount): void
+    }
+}
+
+package "Domain Models" {
+    class Order {
+        - orderId: Long
+        - customerId: Long
+        - orderDate: DateTime
+        - totalAmount: decimal
+        - status: OrderStatus
+        - items: List<OrderItem>
+        + getOrderDetails(): OrderDetails
+        + updateStatus(status): void
+        + isEligibleForRefund(): boolean
+    }
+    
+    class RefundRequest {
+        - refundId: Long
+        - orderId: Long
+        - customerId: Long
+        - productId: Long
+        - reason: String
+        - amount: decimal
+        - status: RefundStatus
+        - requestDate: DateTime
+        - processedDate: DateTime
+        - method: RefundMethod
+        + approve(method): void
+        + deny(reason): void
+        + markAsDefective(defectType): void
+    }
+    
+    enum RefundStatus {
+        PENDING
+        APPROVED
+        APPROVED_DEFECTIVE
+        DENIED
+        PROCESSING_FAILED
+    }
+    
+    enum RefundMethod {
+        CREDIT
+        CARD
+    }
+    
+    enum OrderStatus {
+        PENDING
+        COMPLETED
+        REFUNDED
+        PARTIALLY_REFUNDED
+        CANCELLED
+    }
+    
+    class Payment {
+        - paymentId: Long
+        - orderId: Long
+        - customerId: Long
+        - amount: decimal
+        - paymentMethod: String
+        - paymentDate: DateTime
+        - status: PaymentStatus
+        - transactionId: String
+        + refund(amount): RefundTransaction
+        + updateStatus(status): void
+    }
+    
+    class Credit {
+        - creditId: Long
+        - customerId: Long
+        - amount: decimal
+        - balance: decimal
+        - issuedDate: DateTime
+        - expiryDate: DateTime
+        - reason: String
+        - refundId: Long
+        + apply(orderAmount): decimal
+        + getAvailableBalance(): decimal
+    }
+    
+    class DefectiveItem {
+        - defectiveId: Long
+        - productId: Long
+        - orderId: Long
+        - refundId: Long
+        - defectType: String
+        - description: String
+        - reportedDate: DateTime
+        - status: DefectStatus
+        + getDefectDetails(): DefectDetails
+    }
+    
+    class RefundTransaction {
+        - transactionId: Long
+        - refundId: Long
+        - paymentId: Long
+        - amount: decimal
+        - transactionDate: DateTime
+        - status: TransactionStatus
+        - gatewayResponse: String
+    }
+    
+    class MetricsRecord {
+        - metricId: Long
+        - metricType: String
+        - value: decimal
+        - timestamp: DateTime
+        - refundId: Long
+        + increment(): void
+        + getValue(): decimal
+    }
+}
+
+package "Repositories (Data Access Layer)" {
+    interface RefundRepository {
+        + save(refund: RefundRequest): RefundRequest
+        + findById(refundId): RefundRequest
+        + findByStatus(status): List<RefundRequest>
+        + findByCustomerId(customerId): List<RefundRequest>
+        + update(refund: RefundRequest): void
+    }
+    
+    interface OrderRepository {
+        + findById(orderId): Order
+        + update(order: Order): void
+        + findByCustomerId(customerId): List<Order>
+    }
+    
+    interface DefectiveItemRepository {
+        + save(defectiveItem: DefectiveItem): DefectiveItem
+        + findByProductId(productId): List<DefectiveItem>
+        + findByRefundId(refundId): DefectiveItem
+    }
+    
+    interface PaymentRepository {
+        + findById(paymentId): Payment
+        + findByOrderId(orderId): Payment
+        + update(payment: Payment): void
+    }
+    
+    interface CreditRepository {
+        + save(credit: Credit): Credit
+        + findByCustomerId(customerId): List<Credit>
+        + updateBalance(creditId, balance): void
+    }
+    
+    interface MetricsRepository {
+        + save(metric: MetricsRecord): MetricsRecord
+        + findByType(metricType): List<MetricsRecord>
+        + aggregate(metricType, period): decimal
+    }
+}
+
+' Associations
+Order "1" -- "0..*" RefundRequest : has >
+Order "1" -- "1" Payment : paid by >
+RefundRequest "1" -- "0..1" DefectiveItem : may have >
+RefundRequest "1" -- "0..1" Credit : may result in >
+RefundRequest "1" -- "0..1" RefundTransaction : may have >
+Payment "1" -- "0..*" RefundTransaction : refunded via >
+Credit "*" -- "1" Customer : belongs to >
+Order "*" -- "1" Customer : placed by >
+RefundRequest "*" -- "1" Customer : requested by >
+
+' Controller → Service dependencies
+RefundController --> RefundService : uses
+RefundController --> MonitoringService : uses
+AdminController --> RefundService : uses
+AdminController --> MonitoringService : uses
+
+' Service → Service dependencies
+RefundService --> RefundProcessor : delegates to
+RefundService --> PaymentService : uses
+RefundService --> CreditService : uses
+RefundService --> MetricsService : uses
+RefundService --> MonitoringService : logs via
+
+' Service → Repository dependencies
+RefundService --> RefundRepository : persists via
+RefundService --> OrderRepository : queries
+RefundService --> DefectiveItemRepository : persists via
+PaymentService --> PaymentRepository : persists via
+CreditService --> CreditRepository : persists via
+MetricsService --> MetricsRepository : persists via
+
+' Service → Domain dependencies
+RefundService ..> RefundRequest : creates/manages
+RefundService ..> Order : reads/updates
+RefundService ..> DefectiveItem : creates
+RefundService ..> Credit : creates
+RefundService ..> RefundTransaction : creates
+RefundProcessor ..> Payment : processes
+PaymentService ..> Payment : manages
+
+' Repository → Domain dependencies
+RefundRepository ..> RefundRequest : stores
+OrderRepository ..> Order : stores
+DefectiveItemRepository ..> DefectiveItem : stores
+PaymentRepository ..> Payment : stores
+CreditRepository ..> Credit : stores
+MetricsRepository ..> MetricsRecord : stores
+
+note top of RefundController
+  Presentation Layer
+  Handles HTTP requests,
+  validates input, returns responses
+end note
+
+note top of RefundService
+  Business Logic Layer
+  Orchestrates refund processing,
+  enforces business rules
+end note
+
+note top of RefundRepository
+  Data Access Layer
+  Abstracts database operations,
+  implements persistence
+end note
+
+note right of Order
+  Domain Model
+  Represents core business entities
+  with behavior and validation
+end note
+
+@enduml
