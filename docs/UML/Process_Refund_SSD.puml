@@ -1,0 +1,110 @@
+@startuml Process_Refund_SSD
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam sequenceMessageAlign center
+
+title System Sequence Diagram - Process Refund
+
+actor Customer
+actor Admin
+participant "<<System>>\n:RetailAppSystem" as System
+
+== Refund Request Submission ==
+
+Customer -> System: submitRefundRequest(orderId, productId, reason)
+activate System
+System -> System: validateOrder(orderId)
+System -> System: createRefundRequest(status="PENDING")
+System --> Customer: confirmationMessage(refundId, status="PENDING")
+deactivate System
+
+note right of System
+  RefundRequest persisted
+  via RefundRepository.
+  Linked to Order entity.
+end note
+
+== Admin Review ==
+
+Admin -> System: getPendingRefunds()
+activate System
+System --> Admin: refundRequestList[]
+deactivate System
+
+Admin -> System: reviewRefundRequest(refundId)
+activate System
+System --> Admin: refundDetails(orderId, customerId, productId, reason, amount)
+deactivate System
+
+== Approval Decision ==
+
+alt Approve - Credit
+    Admin -> System: approveRefund(refundId, method="CREDIT")
+    activate System
+    System -> System: validateRefundRequest(refundId)
+    System -> System: issueCredit(customerId, amount)
+    note right: Creates Credit entity
+    System -> System: updateOrderStatus(orderId, status="REFUNDED")
+    System -> System: updateRefundStatus(refundId, status="APPROVED")
+    System -> System: updateMetrics(type="REFUND_APPROVED_CREDIT")
+    System --> Admin: showUpdatedRefundStatus(refundId, status="APPROVED")
+    System --> Customer: refundNotification(method="CREDIT", amount)
+    deactivate System
+
+else Approve - Card Refund
+    Admin -> System: approveRefund(refundId, method="CARD")
+    activate System
+    System -> System: validateRefundRequest(refundId)
+    System -> System: processCardRefund(paymentId, amount)
+    note right: Updates Payment entity
+    System -> System: updateOrderStatus(orderId, status="REFUNDED")
+    System -> System: updateRefundStatus(refundId, status="APPROVED")
+    System -> System: updateMetrics(type="REFUND_APPROVED_CARD")
+    System --> Admin: showUpdatedRefundStatus(refundId, status="APPROVED")
+    System --> Customer: refundNotification(method="CARD", amount, eta="5-7 days")
+    deactivate System
+
+else Approve - Defective Item
+    Admin -> System: markDefective(refundId, defectType, description)
+    activate System
+    System -> System: validateRefundRequest(refundId)
+    System -> System: createDefectiveRecord(productId, defectType, description, orderId)
+    note right: Creates DefectiveItem entity
+    System -> System: issueCredit(customerId, amount)
+    System -> System: updateOrderStatus(orderId, status="REFUNDED")
+    System -> System: updateRefundStatus(refundId, status="APPROVED_DEFECTIVE")
+    System -> System: updateMetrics(type="DEFECTIVE_ITEM_REFUND")
+    System --> Admin: showUpdatedRefundStatus(refundId, status="APPROVED_DEFECTIVE")
+    System --> Customer: refundNotification(method="CREDIT", amount, note="Defective item")
+    deactivate System
+
+else Deny Request
+    Admin -> System: denyRefund(refundId, reason)
+    activate System
+    System -> System: validateRefundRequest(refundId)
+    System -> System: updateRefundStatus(refundId, status="DENIED")
+    System -> System: updateMetrics(type="REFUND_DENIED")
+    System --> Admin: showUpdatedRefundStatus(refundId, status="DENIED")
+    System --> Customer: refundNotification(status="DENIED", reason)
+    deactivate System
+end
+
+== Status Check ==
+
+Customer -> System: checkRefundStatus(refundId)
+activate System
+System --> Customer: refundStatusInfo(status, method, amount, timestamp)
+deactivate System
+
+Admin -> System: getRefundMetrics()
+activate System
+System --> Admin: metricsReport(totalRefunds, approvalRate, defectiveRate)
+deactivate System
+
+note over System
+  All operations logged via
+  MonitoringService for audit trail
+end note
+
+@enduml

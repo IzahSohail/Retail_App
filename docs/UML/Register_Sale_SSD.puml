@@ -1,0 +1,225 @@
+@startuml Register_Sale_SSD
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 12
+
+title System Sequence Diagram: Register a Sale / Purchase
+
+actor "Customer" as Customer
+participant "<<System>>\n:RetailAppSystem" as System
+actor "PaymentService" as PaymentSvc
+
+== Cart Preparation (Optional) ==
+
+Customer -> System: addToCart(productId, quantity)
+activate System
+System -> System: validateProduct(productId)
+note right
+  - Check product exists
+  - Check active status
+  - Check available stock
+end note
+System -> System: createCartItem(userId, productId, quantity)
+System --> Customer: cartUpdated(success)
+deactivate System
+
+Customer -> System: viewCart()
+activate System
+System -> System: getCartItems(userId)
+System -> System: calculateCartTotals(items)
+note right
+  - Apply flash sale discounts
+  - Calculate subtotal
+  - Add tax (5%) and fees (2%)
+end note
+System --> Customer: showCart(items, totals)
+deactivate System
+
+== Checkout Flow ==
+
+Customer -> System: initiateCheckout(paymentMethod, storeCreditAmount)
+activate System
+
+System -> System: validateAuthentication(userId)
+note right: Check req.oidc.isAuthenticated()
+
+alt Idempotency Check
+  System -> System: checkIdempotencyKey(key)
+  alt Duplicate Request
+    System --> Customer: showCachedResult(existingSale)
+    note right: Return previous result without reprocessing
+  end
+end
+
+System -> System: getCartItems(userId)
+System -> System: validateCartItems()
+note right
+  For each item:
+  - Product still active?
+  - Not self-purchase?
+  - Sufficient stock?
+  - Apply flash sale discounts
+end note
+
+alt Validation Failed
+  System --> Customer: showError(reason)
+  note right
+    Examples:
+    - "Product no longer available"
+    - "Cannot purchase your own product"
+    - "Insufficient stock"
+  end note
+  deactivate System
+end
+
+System -> System: calculateOrderTotals(items, storeCreditAmount)
+note right
+  subtotalMinor = sum(lineTotal)
+  taxMinor = subtotalMinor * 0.05
+  feesMinor = subtotalMinor * 0.02
+  totalMinor = subtotal + tax + fees
+  amountAfterCredits = totalMinor - storeCreditAmount
+end note
+
+System --> Customer: showOrderSummary(totals, breakdown)
+deactivate System
+
+Customer -> System: confirmPayment()
+activate System
+
+== Phase 1: Atomic Stock Reservation ==
+
+System -> System: beginTransaction()
+loop For each cart item
+  System -> System: reserveStock(productId, quantity)
+  note right
+    UPDATE product
+    SET stock = stock - quantity
+    WHERE id = productId
+      AND active = true
+      AND sellerId != buyerId
+      AND stock >= quantity
+      
+    If updateCount = 0, throw error
+  end note
+  
+  alt Stock Reservation Failed
+    System -> System: rollbackTransaction()
+    System --> Customer: showError("Stock unavailable")
+    deactivate System
+  end
+end
+
+System -> System: createSale(status="PENDING", totals)
+System -> System: createSaleItems(products, quantities, prices)
+System -> System: commitTransaction()
+
+== Phase 2: Payment Processing ==
+
+alt Amount After Credits > 0
+  System -> PaymentSvc: processPayment(amount, method, idempotencyKey)
+  activate PaymentSvc
+  
+  PaymentSvc -> PaymentSvc: checkCircuitBreaker()
+  
+  alt Circuit Breaker OPEN
+    PaymentSvc --> System: circuitOpen()
+    System -> System: rollbackSale()
+    note right
+      - Cancel sale (status = CANCELED)
+      - Return all reserved stock
+    end note
+    System --> Customer: showError("Service unavailable, try later")
+    deactivate System
+    deactivate PaymentSvc
+  end
+  
+  loop Up to 3 retries
+    PaymentSvc -> PaymentSvc: attemptPayment()
+    note right
+      Mock payment with:
+      - 5% network error rate
+      - Exponential backoff
+      - Idempotency check
+    end note
+    
+    alt Payment Success
+      PaymentSvc -> PaymentSvc: recordSuccess()
+      PaymentSvc --> System: paymentApproved(transactionId)
+    else Payment Failed
+      PaymentSvc -> PaymentSvc: recordFailure()
+      alt Retryable Error
+        PaymentSvc -> PaymentSvc: wait(backoffDelay)
+      else Non-Retryable Error
+        PaymentSvc --> System: paymentDeclined(reason)
+      end
+    end
+  end
+  
+  alt All Retries Exhausted
+    PaymentSvc --> System: paymentFailed(reason)
+    deactivate PaymentSvc
+    
+    System -> System: rollbackSale()
+    note right
+      - Cancel sale
+      - Return stock
+    end note
+    System --> Customer: showError("Payment failed")
+    deactivate System
+  end
+  
+  deactivate PaymentSvc
+else Fully Paid with Credits
+  System -> System: createSuccessResult("STORE_CREDIT")
+  note right: paymentResult = { success: true, status: "APPROVED" }
+end
+
+== Phase 3: Finalize Sale ==
+
+System -> System: beginTransaction()
+
+alt Store Credits Used
+  System -> System: deductCredits(userId, storeCreditAmount)
+  note right: UPDATE user SET creditMinor = creditMinor - amount
+end
+
+System -> System: createPaymentRecord(saleId, method, status, approvalRef)
+
+alt Payment Approved
+  System -> System: completeSale(saleId, status="COMPLETED")
+  System -> System: clearCart(userId)
+  System -> System: commitTransaction()
+  
+  System --> Customer: showSuccess(saleId, receipt)
+  note left
+    Response:
+    {
+      "success": true,
+      "message": "Purchase completed!",
+      "sale": {...},
+      "payment": {...}
+    }
+  end note
+else Payment Declined
+  System -> System: cancelSale(saleId, status="CANCELED")
+  System -> System: returnStock(allProducts)
+  System -> System: restoreCredits(userId, storeCreditAmount)
+  System -> System: commitTransaction()
+  
+  System --> Customer: showError(failureReason)
+  note left
+    Response:
+    {
+      "success": false,
+      "error": "Payment failed: ...",
+      "sale": {...}
+    }
+  end note
+end
+
+deactivate System
+
+@enduml
