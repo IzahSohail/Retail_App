@@ -14,6 +14,7 @@ import BusinessDashboard from './business_panel/BusinessDashboard';
 import AdminPanel from './admin/AdminPanel';
 import StudentVerification from './verification/StudentVerification';
 import ReturnsRefunds from './components/ReturnRefunds';
+import ProductDetail from './components/ProductDetail';
 
 export default function App() {
   const [greet, setGreet] = useState('');
@@ -251,6 +252,7 @@ export default function App() {
           <Route path="/admin" element={<AdminPanel />} />
           <Route path="/verification" element={<StudentVerification />} />
           <Route path="/returns" element={<ReturnsRefunds user={profile} />} />
+          <Route path="/product/:id" element={<ProductDetail user={profile} onLogin={handleLogin} onCartUpdate={updateCartCount} />} />
 
         </Routes>
       </div>

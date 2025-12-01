@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { ShoppingCart, Heart, Eye } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -13,7 +13,14 @@ export default function ProductCard({ p, user, onLogin, onCartUpdate }) {
 
   const price = p.priceMinor === 0 ? 'FREE' : `${(p.priceMinor / 100).toFixed(2)} ${p.currency}`;
 
-  const handleAddToCart = async () => {
+  const handleCardClick = (e) => {
+    // Don't navigate if clicking on buttons
+    if (e.target.closest('button')) return;
+    navigate(`/product/${p.id}`);
+  };
+
+  const handleAddToCart = async (e) => {
+    e.stopPropagation();
     if (!user) {
       alert('Please login first');
       if (onLogin) onLogin();
@@ -60,7 +67,10 @@ export default function ProductCard({ p, user, onLogin, onCartUpdate }) {
   const isBusinessUser = user && user.role === 'BUSINESS';
 
   return (
-    <Card className="group hover:shadow-xl transition-all duration-300 bg-white/80 backdrop-blur-sm border-purple-100 overflow-hidden">
+    <Card 
+      className="group hover:shadow-xl transition-all duration-300 bg-white/80 backdrop-blur-sm border-purple-100 overflow-hidden cursor-pointer"
+      onClick={handleCardClick}
+    >
       <div className="relative">
         {/* Product Image */}
         <div className="aspect-square bg-gray-100 flex items-center justify-center overflow-hidden">
