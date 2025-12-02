@@ -50,6 +50,9 @@ services:
     volumes:
       - ./backend/src:/app/src
       - ./prisma:/app/prisma
+      # Mount the built frontend into the backend so the backend can serve static files
+      # Ensure you run `cd frontend && npm run build` before starting the stack
+      - ./frontend/build:/app/frontend_build:ro
     networks:
       - retail-network
 
