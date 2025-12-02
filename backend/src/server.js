@@ -666,6 +666,70 @@ app.post('/api/listings', testAuthMiddleware, upload.single('image'), async (req
   }
 });
 
+// --- Get a single product by ID ---
+// GET /api/products/:id
+app.get('/api/products/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const product = await prisma.product.findUnique({
+      where: { id },
+      include: {
+        seller: {
+          select: { id: true, name: true, email: true }
+        }
+      }
+    });
+
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    // Check for active flash sales
+    const now = new Date();
+    const flashSaleItem = await prisma.flashSaleItem.findFirst({
+      where: {
+        productId: product.id,
+        flashSale: {
+          startsAt: { lte: now },
+          endsAt: { gte: now }
+        }
+      },
+      include: {
+        flashSale: true
+      }
+    });
+
+    let flashSale = null;
+    if (flashSaleItem) {
+      const originalPrice = product.priceMinor;
+      let discountedPrice;
+      if (flashSaleItem.flashSale.discountType === 'PERCENTAGE') {
+        discountedPrice = Math.round(originalPrice * (1 - flashSaleItem.flashSale.discountValue / 100));
+      } else {
+        discountedPrice = Math.max(0, originalPrice - flashSaleItem.flashSale.discountValue);
+      }
+      flashSale = {
+        title: flashSaleItem.flashSale.title,
+        discountedPriceMinor: discountedPrice,
+        savingsPercent: Math.round((1 - discountedPrice / originalPrice) * 100),
+        endsAt: flashSaleItem.flashSale.endsAt
+      };
+    }
+
+    res.json({
+      product: {
+        ...product,
+        flashSale
+      }
+    });
+
+  } catch (err) {
+    console.error('GET /api/products/:id error:', err);
+    res.status(500).json({ error: 'Failed to load product' });
+  }
+});
+
 // --- Delete a product (Admin only) ---
 // DELETE /api/products/:id
 app.delete('/api/products/:id', requiresAuth(), async (req, res) => {

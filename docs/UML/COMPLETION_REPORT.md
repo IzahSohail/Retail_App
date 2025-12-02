@@ -77,6 +77,28 @@ npm test
   - `/api/products` - Product catalog with flash sale integration
   - `/api/profile` - User management
 
+### 🔌 Backend API Quick Reference
+
+Message: Retail App Backend API
+
+Note: Frontend not built yet. Run `npm run build` in the `frontend` directory before deploying a production image.
+
+Primary endpoints:
+
+- `GET /api/products` — product listing and search
+- `POST /api/cart` / `GET /api/cart` — cart operations (add, update, fetch)
+- `GET /api/profile` — authenticated user profile & roles
+- `GET /api/admin/*` — admin endpoints (requires ADMIN role)
+- `POST /api/rma` / `GET /api/rma` — return & refund management (RMA)
+
+Example: to build the frontend before creating production images:
+
+```bash
+cd frontend
+npm install
+npm run build
+```
+
 **Database Schema:**
 - [x] **Prisma ORM** (`prisma/schema.prisma`)
   - Complete RMA workflow models (ReturnRequest, Inspection, Refund, RmaAuditLog)

@@ -7,6 +7,7 @@ export default function AdminPanel() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('students');
+  const [selectedProduct, setSelectedProduct] = useState(null);
   
   const [students, setStudents] = useState([]);
   const [businesses, setBusinesses] = useState([]);
@@ -16,6 +17,10 @@ export default function AdminPanel() {
   const [flashSales, setFlashSales] = useState([]);
   const [showCreateFlashSale, setShowCreateFlashSale] = useState(false);
   const [editingFlashSale, setEditingFlashSale] = useState(null);
+  const [stockThreshold, setStockThreshold] = useState(() => {
+    const saved = localStorage.getItem('stockThreshold');
+    return saved ? parseInt(saved) : 5;
+  });
   const [flashSaleForm, setFlashSaleForm] = useState({
     title: '',
     description: '',
@@ -328,6 +333,14 @@ export default function AdminPanel() {
     }
   };
 
+  const handleThresholdChange = (value) => {
+    const threshold = Math.max(0, parseInt(value) || 0);
+    setStockThreshold(threshold);
+    localStorage.setItem('stockThreshold', threshold.toString());
+  };
+
+  const lowStockProducts = products.filter(p => p.stock <= stockThreshold);
+
   if (loading) {
     return <div className="container mx-auto p-8">Loading...</div>;
   }
@@ -378,6 +391,11 @@ export default function AdminPanel() {
           className={`pb-2 px-4 ${activeTab === 'products' ? 'border-b-2 border-blue-600 font-semibold' : ''}`}
         >
           Products ({products.length})
+          {lowStockProducts.length > 0 && (
+            <span className="ml-1 bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">
+              {lowStockProducts.length} low
+            </span>
+          )}
         </button>
       </div>
 
@@ -1126,8 +1144,43 @@ export default function AdminPanel() {
         <div className="space-y-4">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-2xl font-bold">All Products</h2>
-            <Button onClick={loadData} variant="outline">Refresh</Button>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-gray-600">Stock Threshold:</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={stockThreshold}
+                  onChange={(e) => handleThresholdChange(e.target.value)}
+                  className="w-20 border border-gray-300 rounded px-2 py-1 text-sm"
+                />
+              </div>
+              <Button onClick={loadData} variant="outline">Refresh</Button>
+            </div>
           </div>
+
+          {/* Low Stock Alerts */}
+          {lowStockProducts.length > 0 && (
+            <Card className="border-red-300 bg-red-50">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-lg text-red-700">Low Stock Alerts ({lowStockProducts.length})</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-wrap gap-2">
+                  {lowStockProducts.map(product => (
+                    <button
+                      key={product.id}
+                      onClick={() => setSelectedProduct(product)}
+                      className="text-left bg-white px-3 py-2 rounded border border-red-200 hover:bg-red-100 transition-colors"
+                    >
+                      <span className="text-sm text-blue-600 hover:underline">{product.title}</span>
+                      <span className="text-red-600 text-sm font-bold ml-2">(Stock: {product.stock})</span>
+                    </button>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {products.length === 0 ? (
             <Card>
@@ -1138,7 +1191,11 @@ export default function AdminPanel() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {products.map(product => (
-                <Card key={product.id}>
+                <Card 
+                  key={product.id} 
+                  className={`cursor-pointer hover:shadow-lg transition-shadow ${product.stock <= stockThreshold ? 'border-red-300' : ''}`}
+                  onClick={() => setSelectedProduct(product)}
+                >
                   <CardContent className="p-4">
                     {product.imageUrl && (
                       <img src={product.imageUrl} alt={product.title} className="w-full h-40 object-cover rounded mb-3" />
@@ -1148,15 +1205,94 @@ export default function AdminPanel() {
                     <div className="flex justify-between items-center">
                       <div>
                         <p className="font-bold">د.إ {(product.priceMinor / 100).toFixed(2)}</p>
-                        <p className="text-sm text-gray-600">Stock: {product.stock}</p>
+                        <p className={`text-sm ${product.stock <= stockThreshold ? 'text-red-600 font-bold' : 'text-gray-600'}`}>
+                          Stock: {product.stock} {product.stock <= stockThreshold && '(Low)'}
+                        </p>
                       </div>
-                      <Button onClick={() => handleDeleteProduct(product.id)} variant="destructive" size="sm">
+                      <Button 
+                        onClick={(e) => { e.stopPropagation(); handleDeleteProduct(product.id); }} 
+                        variant="destructive" 
+                        size="sm"
+                      >
                         Delete
                       </Button>
                     </div>
                   </CardContent>
                 </Card>
               ))}
+            </div>
+          )}
+
+          {/* Product Detail Modal */}
+          {selectedProduct && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setSelectedProduct(null)}>
+              <Card className="max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                <CardHeader className="flex flex-row items-start justify-between">
+                  <CardTitle>{selectedProduct.title}</CardTitle>
+                  <Button variant="ghost" size="sm" onClick={() => setSelectedProduct(null)}>X</Button>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {selectedProduct.imageUrl && (
+                    <img 
+                      src={selectedProduct.imageUrl} 
+                      alt={selectedProduct.title} 
+                      className="w-full h-64 object-cover rounded-lg"
+                    />
+                  )}
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-sm text-gray-600">Price</p>
+                      <p className="text-xl font-bold text-purple-600">د.إ {(selectedProduct.priceMinor / 100).toFixed(2)}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-600">Stock</p>
+                      <p className={`text-xl font-bold ${selectedProduct.stock <= stockThreshold ? 'text-red-600' : 'text-green-600'}`}>
+                        {selectedProduct.stock} {selectedProduct.stock <= stockThreshold && '(Low Stock)'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-600">Category</p>
+                      <p className="font-medium">{selectedProduct.category || 'Uncategorized'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-600">Listed</p>
+                      <p className="font-medium">{new Date(selectedProduct.createdAt).toLocaleDateString()}</p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-sm text-gray-600 mb-1">Description</p>
+                    <p className="text-gray-800 whitespace-pre-wrap bg-gray-50 p-3 rounded">
+                      {selectedProduct.description || 'No description provided.'}
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="text-sm text-gray-600 mb-1">Product ID</p>
+                    <p className="font-mono text-xs bg-gray-100 p-2 rounded">{selectedProduct.id}</p>
+                  </div>
+
+                  {selectedProduct.sellerId && (
+                    <div>
+                      <p className="text-sm text-gray-600 mb-1">Seller ID</p>
+                      <p className="font-mono text-xs bg-gray-100 p-2 rounded">{selectedProduct.sellerId}</p>
+                    </div>
+                  )}
+
+                  <div className="flex gap-2 pt-4 border-t">
+                    <Button 
+                      onClick={() => { handleDeleteProduct(selectedProduct.id); setSelectedProduct(null); }} 
+                      variant="destructive"
+                    >
+                      Delete Product
+                    </Button>
+                    <Button variant="outline" onClick={() => setSelectedProduct(null)}>
+                      Close
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           )}
         </div>
