@@ -265,6 +265,29 @@ curl http://localhost:8000              # Frontend check
 
 ---
 
+## 🛠️ Recent Code Changes (included in this checkpoint)
+
+The codebase received three focused updates which are included in this Checkpoint 3 delivery. These changes are reflected in the implementation and have been recorded here for traceability.
+
+- backend/src/services/rmaService.js
+  - Validation and sanitization added for return requests (normalizeReturnReason, sanitizeDetails, sanitizeQuantity).
+  - Stronger sale/item validation: ensures return requests are created by original buyer and items map to sale items.
+  - RMA number generation added for traceability (generateRmaNumber).
+  - Improved refund flow and error handling in `issueRefund` including support for STORE_CREDIT, payment adapter refunds, and consistent audit logging.
+  - `finalizeReturn` now updates sale refund totals, sets completed state, and updates product or defective item stock appropriately (handles both DEFECTIVE and NOT_EXPECTED reasons).
+
+- backend/src/routes/rma.js
+  - Route-level improvements: clearer admin check middleware (`requireAdmin`) and consistent 403 on unauthorized admin actions.
+  - Routes now return both `returns` and `rmas` fields (compatibility) and include more robust error handling and logging.
+  - Admin endpoints added/clarified: `/api/rma/:id/authorize`, `/api/rma/:id/inspect`, `/api/rma/:id/refund`, and `/api/rma/:id/status` with server-side validation for actions and statuses.
+
+- backend/package.json
+  - Dev tooling and test configuration updated (scripts: `dev`, `start`, `seed`, `test`, `test:watch`) and Jest settings adjusted to use the tests directory.
+  - Dependency versions updated for Prisma, Supabase, and other core packages; devDependencies include Jest, nodemon, and Prisma CLI for local development and testing.
+
+These code updates improve validation, traceability, and robustness of the RMA/refund flows and have been included in the commit history for this checkpoint.
+
+
 ## 🎉 Status: CHECKPOINT 3 COMPLETE
 
 All requirements fulfilled with comprehensive testing, documentation, and production-ready implementation.
