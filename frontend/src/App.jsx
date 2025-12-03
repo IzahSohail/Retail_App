@@ -21,6 +21,7 @@ export default function App() {
   const [profile, setProfile] = useState(null);
   const [userHasListings, setUserHasListings] = useState(false);
   const [cartItemCount, setCartItemCount] = useState(0);
+  const [hasReturnNotifications, setHasReturnNotifications] = useState(false);
 
   // Function to update cart count
   const updateCartCount = useCallback(async () => {
@@ -67,6 +68,55 @@ export default function App() {
   useEffect(() => {
     updateCartCount();
   }, [updateCartCount]);
+
+  // Check for unseen return/refund updates for notification dot
+  useEffect(() => {
+    const checkReturnNotifications = async () => {
+      try {
+        if (!profile || profile.role === 'BUSINESS' || profile.role === 'ADMIN') {
+          setHasReturnNotifications(false);
+          return;
+        }
+
+        const lastSeenRaw = typeof window !== 'undefined'
+          ? window.localStorage.getItem('returnsLastSeenAt')
+          : null;
+        const lastSeen = lastSeenRaw ? parseInt(lastSeenRaw, 10) : null;
+
+        const response = await api.get('/rma');
+        const returns = response.data.returns || response.data.rmas || [];
+
+        if (!returns.length) {
+          setHasReturnNotifications(false);
+          return;
+        }
+
+        const latestUpdatedAt = returns.reduce((max, r) => {
+          const t = r.updatedAt ? new Date(r.updatedAt).getTime() : 0;
+          return t > max ? t : max;
+        }, 0);
+
+        if (!latestUpdatedAt) {
+          setHasReturnNotifications(false);
+          return;
+        }
+
+        // If never seen before on this device, treat existing returns as notifications
+        if (!lastSeen) {
+          setHasReturnNotifications(true);
+          return;
+        }
+
+        setHasReturnNotifications(latestUpdatedAt > lastSeen);
+      } catch (err) {
+        console.error('Failed to check return notifications:', err);
+        // On error, don't break the UI – just hide the dot
+        setHasReturnNotifications(false);
+      }
+    };
+
+    checkReturnNotifications();
+  }, [profile]);
 
   const backendBase = (import.meta.env.VITE_BACKEND_BASE || 'http://localhost:3001');
 
@@ -130,9 +180,14 @@ export default function App() {
                               </Link>
                               
                               <Link to="/returns">
-                                <Button variant="ghost" size="sm">
+                                <Button variant="ghost" size="sm" className="relative">
                                   <Package className="w-4 h-4 mr-2" />
-                                  Return an Item
+                                  <span>Return an Item</span>
+                                  {hasReturnNotifications && (
+                                    <span
+                                      className="absolute -top-1 -right-1 bg-red-500 rounded-full w-2 h-2"
+                                    />
+                                  )}
                                 </Button>
                               </Link>
                             </>
@@ -251,7 +306,15 @@ export default function App() {
           
           <Route path="/admin" element={<AdminPanel />} />
           <Route path="/verification" element={<StudentVerification />} />
-          <Route path="/returns" element={<ReturnsRefunds user={profile} />} />
+          <Route
+            path="/returns"
+            element={
+              <ReturnsRefunds
+                user={profile}
+                onViewed={() => setHasReturnNotifications(false)}
+              />
+            }
+          />
           <Route path="/product/:id" element={<ProductDetail user={profile} onLogin={handleLogin} onCartUpdate={updateCartCount} />} />
 
         </Routes>

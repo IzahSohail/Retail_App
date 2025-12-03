@@ -131,7 +131,7 @@ const authConfig = {
     login: '/login',
     callback: '/callback',
     logout: '/logout',
-    postLogoutRedirect: process.env.FRONTEND_URL || 'http://localhost:8000' // Frontend after logout
+    postLogoutRedirect: process.env.FRONTEND_URL || 'http://localhost:8000' // this depends on the port we run it on 
   },
   afterCallback: async (req, res, session, state) => {
     try {

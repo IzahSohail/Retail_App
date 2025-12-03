@@ -9,7 +9,7 @@ import { Textarea } from './ui/textarea';
 import { Label } from './ui/label';
 import { api } from '../api';
 
-export default function ReturnsRefunds({ user }) {
+export default function ReturnsRefunds({ user, onViewed }) {
   const navigate = useNavigate();
   const [returns, setReturns] = useState([]);
   const [purchases, setPurchases] = useState([]);
@@ -33,6 +33,22 @@ export default function ReturnsRefunds({ user }) {
     loadReturns();
     loadPurchases();
   }, [user, navigate]);
+
+  // Mark returns as "seen" on this device once they've loaded
+  useEffect(() => {
+    if (!user || loading) return;
+    try {
+      const now = Date.now();
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('returnsLastSeenAt', now.toString());
+      }
+      if (typeof onViewed === 'function') {
+        onViewed(now);
+      }
+    } catch (err) {
+      console.error('Failed to update returns last seen timestamp:', err);
+    }
+  }, [user, loading, onViewed]);
 
   const loadReturns = async () => {
     try {
