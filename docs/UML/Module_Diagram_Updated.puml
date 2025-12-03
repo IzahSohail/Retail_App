@@ -1,0 +1,35 @@
+@startuml
+' Module / Component diagram showing backend modules and their responsibilities
+package "Backend Modules" {
+  [server.js] as server
+  [routes/*] as routes
+  [services/*] as services
+  [utils/*] as utils
+  [db.js / Prisma Wrapper] as prisma
+  [supabase.js] as supabase
+  [payments/*] as payments
+  [rmaService.js] as rma
+}
+
+server --> routes : registers endpoints
+routes --> services : delegate business logic
+services --> prisma : read/write
+services --> supabase : uploads
+payments --> services : invoked by purchase flows
+rma --> services : return processing
+
+routes : - /api/purchases
+routes : - /api/admin/purchases
+routes : - /api/_dev/purchases-sample
+routes : - /api/_dev/admin/purchases-sample
+
+services : - PurchaseService
+services : - CartService
+services : - RMAService
+services : - FlashSaleService
+
+prisma : wraps @prisma/client
+supabase : provides uploadProductImage(buffer, name, id)
+
+note "Design notes:\n- Separation of concerns: routes are thin, services hold transactions and retry logic.\n- Dev-only routes live behind DEV_ALLOW_TEST_ROUTE." as N
+@enduml

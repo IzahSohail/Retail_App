@@ -1,0 +1,32 @@
+@startuml
+title Order Search (Customer or Admin) - Sequence Diagram
+actor User
+participant Frontend as "ReturnRefunds / AdminPanel"
+participant APIClient as "api.jsx (axios)"
+participant Server as "backend (server.js / routes)"
+participant PurchaseController as "PurchaseController"
+participant Prisma as "PrismaClientWrapper"
+participant DB as "Postgres"
+
+User -> Frontend : type filters (status, startDate, endDate, keyword)
+Frontend -> APIClient : GET /api/purchases or /api/admin/purchases?status=...&startDate=...&keyword=...
+APIClient -> Server : HTTP GET /api/purchases?...
+Server -> PurchaseController : route handler receives query
+PurchaseController -> Prisma : build dynamic `where` using params
+Prisma -> DB : execute SELECT with WHERE (status/date/OR on id/items.product.title/buyer.email/name)
+DB --> Prisma : rows
+Prisma --> PurchaseController : result set
+PurchaseController -> Server : format response (filter out refunded/active returns for user flow)
+alt admin
+  PurchaseController -> Server : include buyer info and payment details
+end
+Server -> APIClient : 200 { purchases: [...] }
+APIClient -> Frontend : resolve data
+Frontend -> User : render list (order id, date, items, amount, status)
+
+note over PurchaseController: Keyword semantics:
+- matches sale.id (contains)
+- matches product.title (contains, insensitive)
+- admin additionally matches buyer.email and buyer.name
+end note
+@enduml

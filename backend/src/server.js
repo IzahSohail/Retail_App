@@ -1121,11 +1121,57 @@ app.get('/api/purchases', requiresAuth(), async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
+  // Query params for filtering/search
+  // Support both `keyword` (preferred) and `q` (backwards compatibility)
+  // Mandatory filters for Checkpoint: status, startDate, endDate, keyword
+  const { status, startDate, endDate, keyword, q } = req.query;
+  const searchTerm = (keyword || q || '').trim();
+
+    const where = {
+      buyerId: user.id,
+      // default: include all statuses unless status query provided
+    };
+
+    // Status filter: accept single status or comma-separated list
+    if (status) {
+      const statuses = String(status).split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+      if (statuses.length === 1) {
+        where.status = statuses[0];
+      } else if (statuses.length > 1) {
+        where.status = { in: statuses };
+      }
+    }
+
+    // Date range filter
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) {
+        const sd = new Date(startDate);
+        if (!isNaN(sd)) where.createdAt.gte = sd;
+      }
+      if (endDate) {
+        const ed = new Date(endDate);
+        if (!isNaN(ed)) where.createdAt.lte = ed;
+      }
+    }
+
+    // Keyword search: match product title or sale id (order id)
+    // Note: `sale.id` is usually a UUID; contains search allows partial id lookup.
+    const orFilters = [];
+    if (searchTerm && searchTerm.length > 0) {
+      orFilters.push({ id: { contains: searchTerm } });
+      orFilters.push({ items: { some: { product: { title: { contains: searchTerm, mode: 'insensitive' } } } } });
+    }
+
+    // (No product-attribute filters for checkpoint) Only status, date-range and keyword are supported.
+
+    // Build the Prisma query with dynamic filters
     const purchases = await prisma.sale.findMany({
-      where: {
-        buyerId: user.id,
-        status: 'COMPLETED'
-      },
+      where: Object.assign(
+        {},
+        where,
+        orFilters.length > 0 ? { OR: orFilters } : {}
+      ),
       include: {
         items: {
           include: {
@@ -1813,6 +1859,126 @@ app.use('/api/admin/flash-sales', adminFlashSalesRouter);
 app.use('/api/pricing', pricingRouter);
 app.use('/api/verification', verificationRouter);
 app.use('/api/rma', rmaRouter);
+
+// --- Development-only test route (no auth) ---
+// Enable by setting environment variable DEV_ALLOW_TEST_ROUTE=true
+if (process.env.DEV_ALLOW_TEST_ROUTE === 'true') {
+  app.get('/api/_dev/purchases-sample', (req, res) => {
+    // Simple in-memory sample purchases to exercise filters without DB or Auth0
+    const sample = [
+      { id: 's1', status: 'COMPLETED', createdAt: '2025-11-01T12:00:00.000Z', items: [{ product: { title: 'Blue Shirt' } }], payment: {} },
+      { id: 's2', status: 'PENDING', createdAt: '2025-10-01T12:00:00.000Z', items: [{ product: { title: 'Red Shoes' } }], payment: {} },
+      { id: 's3', status: 'REFUNDED', createdAt: '2025-09-15T12:00:00.000Z', items: [{ product: { title: 'Green Hat' } }], payment: {} }
+    ];
+
+    const { status, startDate, endDate, keyword, q } = req.query;
+    const searchTerm = (keyword || q || '').trim().toLowerCase();
+
+    let results = sample.slice();
+
+    if (status) {
+      const statuses = String(status).split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+      results = results.filter(r => statuses.includes(String(r.status).toUpperCase()));
+    }
+
+    if (startDate || endDate) {
+      results = results.filter(r => {
+        const created = new Date(r.createdAt);
+        if (startDate) {
+          const sd = new Date(startDate);
+          if (!isNaN(sd) && created < sd) return false;
+        }
+        if (endDate) {
+          const ed = new Date(endDate);
+          if (!isNaN(ed) && created > ed) return false;
+        }
+        return true;
+      });
+    }
+
+    if (searchTerm) {
+      results = results.filter(r => {
+        if (String(r.id).toLowerCase().includes(searchTerm)) return true;
+        return r.items.some(it => String(it.product.title).toLowerCase().includes(searchTerm));
+      });
+    }
+
+    res.json({ success: true, purchases: results });
+  });
+  console.log('⚠️  Dev test route enabled at: GET /api/_dev/purchases-sample (no auth)');
+}
+
+// Dev-only admin purchases sample (no auth) - mirrors admin filtering and shape
+if (process.env.DEV_ALLOW_TEST_ROUTE === 'true') {
+  app.get('/api/_dev/admin/purchases-sample', (req, res) => {
+    const sample = [
+      {
+        id: 'a1',
+        status: 'COMPLETED',
+        createdAt: '2025-11-01T12:00:00.000Z',
+        buyer: { id: 'u1', email: 'alice@example.com', name: 'Alice' },
+        items: [{ product: { title: 'Blue Shirt' }, quantity: 1 }],
+        payment: {},
+        totalMinor: 2999
+      },
+      {
+        id: 'a2',
+        status: 'PENDING',
+        createdAt: '2025-10-01T12:00:00.000Z',
+        buyer: { id: 'u2', email: 'bob@example.com', name: 'Bob' },
+        items: [{ product: { title: 'Red Shoes' }, quantity: 2 }],
+        payment: {},
+        totalMinor: 5998
+      },
+      {
+        id: 'a3',
+        status: 'REFUNDED',
+        createdAt: '2025-09-15T12:00:00.000Z',
+        buyer: { id: 'u3', email: 'carol@example.com', name: 'Carol' },
+        items: [{ product: { title: 'Green Hat' }, quantity: 1 }],
+        payment: {},
+        totalMinor: 1599
+      }
+    ];
+
+    const { status, startDate, endDate, keyword, q } = req.query;
+    const searchTerm = (keyword || q || '').trim().toLowerCase();
+
+    let results = sample.slice();
+
+    if (status) {
+      const statuses = String(status).split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+      results = results.filter(r => statuses.includes(String(r.status).toUpperCase()));
+    }
+
+    if (startDate || endDate) {
+      results = results.filter(r => {
+        const created = new Date(r.createdAt);
+        if (startDate) {
+          const sd = new Date(startDate);
+          if (!isNaN(sd) && created < sd) return false;
+        }
+        if (endDate) {
+          const ed = new Date(endDate);
+          if (!isNaN(ed) && created > ed) return false;
+        }
+        return true;
+      });
+    }
+
+    if (searchTerm) {
+      results = results.filter(r => {
+        if (String(r.id).toLowerCase().includes(searchTerm)) return true;
+        if (String(r.buyer?.email || '').toLowerCase().includes(searchTerm)) return true;
+        if (String(r.buyer?.name || '').toLowerCase().includes(searchTerm)) return true;
+        return r.items.some(it => String(it.product.title).toLowerCase().includes(searchTerm));
+      });
+    }
+
+    res.json({ success: true, purchases: results });
+  });
+  console.log('⚠️  Dev admin test route enabled at: GET /api/_dev/admin/purchases-sample (no auth)');
+}
 
 
 // Serve frontend (built) if exists, otherwise redirect root to CRA dev server

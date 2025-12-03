@@ -13,6 +13,10 @@ export default function ReturnsRefunds({ user }) {
   const navigate = useNavigate();
   const [returns, setReturns] = useState([]);
   const [purchases, setPurchases] = useState([]);
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedPurchase, setSelectedPurchase] = useState(null);
@@ -41,9 +45,18 @@ export default function ReturnsRefunds({ user }) {
     }
   };
 
-  const loadPurchases = async () => {
+  const loadPurchases = async (opts = {}) => {
     try {
-      const response = await api.get('/purchases');
+      // allow passing overrides or use current filters
+      const params = {
+        ...(opts.status ? { status: opts.status } : statusFilter !== 'ALL' ? { status: statusFilter } : {}),
+        ...(opts.startDate || startDate ? { startDate: opts.startDate || startDate } : {}),
+        ...(opts.endDate || endDate ? { endDate: opts.endDate || endDate } : {}),
+         // Use `keyword` param to search by product name or order id (matches backend)
+         ...(opts.keyword || query ? { keyword: opts.keyword || query } : {})
+      };
+
+      const response = await api.get('/purchases', { params });
       setPurchases(response.data.purchases || []);
     } catch (error) {
       console.error('Error loading purchases:', error);
@@ -249,6 +262,46 @@ export default function ReturnsRefunds({ user }) {
               {/* Step 1: Select Purchase */}
               <div>
                 <Label className="text-base font-semibold mb-3 block">1. Select Purchase</Label>
+                {/* Filters: status, date-range, keyword */}
+                <div className="mb-4 grid grid-cols-1 md:grid-cols-4 gap-3">
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    className="border rounded-lg px-3 py-2"
+                  >
+                    <option value="ALL">All statuses</option>
+                    <option value="COMPLETED">Completed</option>
+                    <option value="PENDING">Pending</option>
+                    <option value="RETURNED">Returned</option>
+                    <option value="REFUNDED">Refunded</option>
+                  </select>
+
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="border rounded-lg px-3 py-2"
+                    placeholder="Start date"
+                  />
+
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="border rounded-lg px-3 py-2"
+                    placeholder="End date"
+                  />
+
+                  <div className="flex gap-2">
+                    <Input
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      placeholder="Search by product name or order ID"
+                    />
+                    <Button onClick={() => loadPurchases()} className="ml-2">Apply</Button>
+                  </div>
+                </div>
+
                 {purchases.length === 0 ? (
                   <p className="text-gray-600 text-sm">No completed purchases available for return.</p>
                 ) : (

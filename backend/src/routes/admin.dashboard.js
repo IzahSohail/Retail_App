@@ -191,7 +191,46 @@ router.post('/businesses/:id/verify', requireAdmin, async (req, res) => {
 // Get all purchases (admin view)
 router.get('/purchases', requireAdmin, async (req, res) => {
   try {
+    // Support filters: status, startDate, endDate, keyword (or q)
+    const { status, startDate, endDate, keyword, q } = req.query;
+    const searchTerm = (keyword || q || '').trim();
+
+    const where = {};
+
+    // Status filter: single or comma-separated
+    if (status) {
+      const statuses = String(status).split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+      if (statuses.length === 1) {
+        where.status = statuses[0];
+      } else if (statuses.length > 1) {
+        where.status = { in: statuses };
+      }
+    }
+
+    // Date range filter
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) {
+        const sd = new Date(startDate);
+        if (!isNaN(sd)) where.createdAt.gte = sd;
+      }
+      if (endDate) {
+        const ed = new Date(endDate);
+        if (!isNaN(ed)) where.createdAt.lte = ed;
+      }
+    }
+
+    // Keyword search across sale id, product title, buyer email/name
+    const orFilters = [];
+    if (searchTerm && searchTerm.length > 0) {
+      orFilters.push({ id: { contains: searchTerm } });
+      orFilters.push({ items: { some: { product: { title: { contains: searchTerm, mode: 'insensitive' } } } } });
+      orFilters.push({ buyer: { email: { contains: searchTerm, mode: 'insensitive' } } });
+      orFilters.push({ buyer: { name: { contains: searchTerm, mode: 'insensitive' } } });
+    }
+
     const purchases = await prisma.sale.findMany({
+      where: Object.assign({}, where, orFilters.length > 0 ? { OR: orFilters } : {}),
       orderBy: { createdAt: 'desc' },
       include: {
         buyer: {

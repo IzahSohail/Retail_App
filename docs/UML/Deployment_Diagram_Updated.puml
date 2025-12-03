@@ -1,0 +1,32 @@
+@startuml
+!define AWSPUML https://raw.githubusercontent.com/awslabs/aws-icons-for-plantuml/v14.0/LATEST/AWSPUML
+skinparam componentStyle rectangle
+
+node "Developer Machine / Local Dev" {
+  [Vite Dev Server] as Vite
+  [Node Backend (npm run dev)] as NodeServer
+}
+
+node "Docker Host / Production" {
+  component "Nginx (optional)" as nginx
+  component "Backend Container" as backend
+  component "Frontend Static Files" as frontend_build
+}
+
+database "Postgres (Aiven / Managed)" as pg
+component "Supabase Storage" as supabase
+component "Auth0 (OIDC)" as auth0
+component "Object Storage (S3 compatible)" as s3
+
+Vite -> NodeServer : API requests to /api (dev proxy or CORS)
+NodeServer --> pg : SQL queries via Prisma
+NodeServer --> supabase : upload images
+NodeServer --> auth0 : authenticate / token exchange
+NodeServer --> s3 : (optional) store artifacts
+nginx -> frontend_build : serve static build
+nginx -> backend : proxy /api
+
+note left: Local dev flow uses Vite for frontend and Node server
+note right: Production uses built frontend served by backend or nginx
+
+@enduml

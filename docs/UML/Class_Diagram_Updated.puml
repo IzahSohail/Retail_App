@@ -1,0 +1,127 @@
+@startuml
+' Updated class diagram including new controllers/services not present in original diagrams
+package "Backend (Node / Express)" {
+  class Server {
+    +start()
+  }
+
+  class PurchaseController {
+    +getUserPurchases(params)
+    +getAdminPurchases(params)
+  }
+
+  class AuthController {
+    +afterCallback(session)
+    +login(req)
+  }
+
+  class DevTestRoutes {
+    +purchasesSample()
+    +adminPurchasesSample()
+  }
+
+  class SupabaseClient {
+    -url
+    -serviceRoleKey
+    +uploadProductImage(buffer, name, id)
+  }
+
+  class PrismaClientWrapper {
+    -prisma
+    +findSales(filter)
+    +findProducts(filter)
+  }
+
+  class PaymentService {
+    +processPayment(opts)
+  }
+
+  class MockPaymentAdapter {
+    +processPayment(amount)
+  }
+
+  class RMAService {
+    +createReturnRequest(data)
+    +updateStatus(id, status)
+  }
+
+  class CartService {
+    +addToCart(userId, productId, qty)
+    +checkout(cartId, opts)
+  }
+
+  class NotificationService {
+    +notifyUser(userId, message)
+  }
+
+  Server o-- PurchaseController : exposes
+  Server o-- AuthController
+  Server o-- DevTestRoutes
+
+  PurchaseController ..> PrismaClientWrapper : queries
+  PurchaseController ..> SupabaseClient : (optional image URLs)
+  PurchaseController ..> PaymentService : coordinates
+  PurchaseController ..> RMAService : references returns
+
+  PaymentService ..> MockPaymentAdapter : uses <<adapter>>
+  PaymentService --> PrismaClientWrapper : writes payments
+
+  RMAService --> PrismaClientWrapper
+  CartService --> PrismaClientWrapper
+  NotificationService ..> SupabaseClient : uploads (optional)
+}
+
+package "Frontend (React)" {
+  class ReturnRefundsComponent {
+    +render()
+    +loadPurchases(params)
+  }
+
+  class AdminPanel {
+    +render()
+    +loadSales(params)
+  }
+
+  class ApiClient {
+    +get(path, params)
+    +post(path, body)
+  }
+
+  ReturnRefundsComponent ..> ApiClient
+  AdminPanel ..> ApiClient
+}
+
+package "Database (Postgres via Prisma)" {
+  class Sale {
+    id : UUID
+    buyerId : UUID
+    status : enum
+    createdAt : DateTime
+    totalMinor : Int
+  }
+
+  class SaleItem {
+    id : UUID
+    saleId : UUID
+    productId : UUID
+    quantity : Int
+  }
+
+  class Product {
+    id : UUID
+    title : String
+    priceMinor : Int
+  }
+
+  Sale "1" <-- "*" SaleItem
+  SaleItem --> Product
+  PrismaClientWrapper ..> Sale
+  PrismaClientWrapper ..> SaleItem
+  PrismaClientWrapper ..> Product
+}
+
+note "Search/Filter responsibilities:
+- PurchaseController builds dynamic Prisma `where` clauses
+- Keyword matches sale.id (contains) and product.title (insensitive)
+- Admin search also matches buyer.email and buyer.name" as N1
+@enduml

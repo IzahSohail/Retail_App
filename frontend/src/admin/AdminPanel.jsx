@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
+import { fetchAdminPurchases } from '../api';
 
 export default function AdminPanel() {
   const [user, setUser] = useState(null);
@@ -12,6 +13,10 @@ export default function AdminPanel() {
   const [students, setStudents] = useState([]);
   const [businesses, setBusinesses] = useState([]);
   const [sales, setSales] = useState([]);
+  const [salesStatusFilter, setSalesStatusFilter] = useState('ALL');
+  const [salesStartDate, setSalesStartDate] = useState('');
+  const [salesEndDate, setSalesEndDate] = useState('');
+  const [salesKeyword, setSalesKeyword] = useState('');
   const [returns, setReturns] = useState([]);
   const [products, setProducts] = useState([]);
   const [flashSales, setFlashSales] = useState([]);
@@ -58,10 +63,8 @@ export default function AdminPanel() {
       const businessData = await businessRes.json();
       setBusinesses(businessData.businesses || []);
 
-      // Load sales
-      const salesRes = await fetch('/api/admin/purchases', { credentials: 'include' });
-      const salesData = await salesRes.json();
-      setSales(salesData.purchases || []);
+  // Load sales (use filtered loader)
+  await loadSales();
 
       // Load products
       const productsRes = await fetch('/api/products?limit=1000', { credentials: 'include' });
@@ -82,6 +85,24 @@ export default function AdminPanel() {
       console.error('Error loading data:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Load sales with optional filters
+  const loadSales = async (opts = {}) => {
+    try {
+      const params = {
+        ...(opts.status ? { status: opts.status } : salesStatusFilter !== 'ALL' ? { status: salesStatusFilter } : {}),
+        ...(opts.startDate || salesStartDate ? { startDate: opts.startDate || salesStartDate } : {}),
+        ...(opts.endDate || salesEndDate ? { endDate: opts.endDate || salesEndDate } : {}),
+        ...(opts.keyword || salesKeyword ? { keyword: opts.keyword || salesKeyword } : {})
+      };
+
+      const res = await fetchAdminPurchases(params);
+      const data = res.data || (await res.json?.());
+      setSales((data && (data.purchases || data.sales || [])) || []);
+    } catch (error) {
+      console.error('Error loading admin sales:', error);
     }
   };
 
@@ -568,6 +589,44 @@ export default function AdminPanel() {
             <Button onClick={loadData} variant="outline">Refresh</Button>
           </div>
 
+          {/* Filters: status, date-range, keyword */}
+          <div className="mb-4 bg-white border rounded-lg p-4">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">Status</label>
+                <select
+                  value={salesStatusFilter}
+                  onChange={(e) => setSalesStatusFilter(e.target.value)}
+                  className="w-full border rounded px-3 py-2"
+                >
+                  <option value="ALL">All</option>
+                  <option value="COMPLETED">Completed</option>
+                  <option value="PENDING">Pending</option>
+                  <option value="RETURNED">Returned</option>
+                  <option value="REFUNDED">Refunded</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">Start Date</label>
+                <input type="date" value={salesStartDate} onChange={(e) => setSalesStartDate(e.target.value)} className="w-full border rounded px-3 py-2" />
+              </div>
+
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">End Date</label>
+                <input type="date" value={salesEndDate} onChange={(e) => setSalesEndDate(e.target.value)} className="w-full border rounded px-3 py-2" />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-sm text-gray-600 mb-1">Keyword (order id, product title, buyer email/name)</label>
+                <div className="flex gap-2">
+                  <input type="text" value={salesKeyword} onChange={(e) => setSalesKeyword(e.target.value)} placeholder="Search..." className="w-full border rounded px-3 py-2" />
+                  <Button onClick={() => loadSales()} variant="default">Apply</Button>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Sales Metrics */}
           {sales.length > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-1 gap-4 mb-6">
@@ -599,30 +658,35 @@ export default function AdminPanel() {
                     <tr>
                       <th className="px-4 py-3 text-left text-sm font-medium">Date</th>
                       <th className="px-4 py-3 text-left text-sm font-medium">Buyer</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium">Product</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium">Product(s)</th>
                       <th className="px-4 py-3 text-left text-sm font-medium">Qty</th>
                       <th className="px-4 py-3 text-left text-sm font-medium">Amount</th>
                       <th className="px-4 py-3 text-left text-sm font-medium">Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {sales.map((sale, i) => (
-                      <tr key={i} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 text-sm">{new Date(sale.createdAt).toLocaleString()}</td>
-                        <td className="px-4 py-3 text-sm">
-                          <div>{sale.user?.name}</div>
-                          <div className="text-gray-500 text-xs">{sale.user?.email}</div>
-                        </td>
-                        <td className="px-4 py-3 text-sm">{sale.product?.title}</td>
-                        <td className="px-4 py-3 text-sm">{sale.quantity}</td>
-                        <td className="px-4 py-3 text-sm">د.إ {(sale.totalAmount / 100).toFixed(2)}</td>
-                        <td className="px-4 py-3 text-sm">
-                          <Badge variant={sale.status === 'completed' ? 'success' : 'default'}>
-                            {sale.status}
-                          </Badge>
-                        </td>
-                      </tr>
-                    ))}
+                    {sales.map((sale, i) => {
+                      const productTitles = (sale.items || []).map(it => it.product?.title).filter(Boolean).slice(0,3).join(', ');
+                      const totalQty = (sale.items || []).reduce((s, it) => s + (it.quantity || 0), 0);
+                      const amountMinor = sale.totalAmount || sale.totalMinor || 0;
+                      return (
+                        <tr key={sale.id || i} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 text-sm">{new Date(sale.createdAt).toLocaleString()}</td>
+                          <td className="px-4 py-3 text-sm">
+                            <div>{sale.user?.name || sale.buyer?.name}</div>
+                            <div className="text-gray-500 text-xs">{sale.user?.email || sale.buyer?.email}</div>
+                          </td>
+                          <td className="px-4 py-3 text-sm">{productTitles}</td>
+                          <td className="px-4 py-3 text-sm">{totalQty}</td>
+                          <td className="px-4 py-3 text-sm">د.إ {(amountMinor / 100).toFixed(2)}</td>
+                          <td className="px-4 py-3 text-sm">
+                            <Badge variant={sale.status === 'COMPLETED' ? 'success' : 'default'}>
+                              {sale.status}
+                            </Badge>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </CardContent>

@@ -28,6 +28,9 @@ export const getDashboardStats = () => api.get('/admin/stats');
 // Admin - Users (if implemented)
 export const fetchUsers = () => api.get('/admin/users');
 
+// Admin - Purchases (with filters)
+export const fetchAdminPurchases = (params = {}) => api.get('/admin/purchases', { params });
+
 // Pricing endpoints
 export const calculateDiscount = (originalPrice, discountType, discountValue) => 
   api.post('/pricing/calculate-discount', { originalPrice, discountType, discountValue });
