@@ -1,32 +1,182 @@
 @startuml
 title Order Search (Customer or Admin) - Sequence Diagram
+
 actor User
-participant Frontend as "ReturnRefunds / AdminPanel"
-participant APIClient as "api.jsx (axios)"
-participant Server as "backend (server.js / routes)"
-participant PurchaseController as "PurchaseController"
-participant Prisma as "PrismaClientWrapper"
-participant DB as "Postgres"
+participant "Frontend\nReturnRefunds/AdminPanel" as Frontend
+participant "api.jsx\n(Axios Client)" as APIClient
+participant "server.js\nRoutes" as Server
+participant "Prisma\nClient" as Prisma
+database "PostgreSQL" as DB
 
-User -> Frontend : type filters (status, startDate, endDate, keyword)
-Frontend -> APIClient : GET /api/purchases or /api/admin/purchases?status=...&startDate=...&keyword=...
-APIClient -> Server : HTTP GET /api/purchases?...
-Server -> PurchaseController : route handler receives query
-PurchaseController -> Prisma : build dynamic `where` using params
-Prisma -> DB : execute SELECT with WHERE (status/date/OR on id/items.product.title/buyer.email/name)
-DB --> Prisma : rows
-Prisma --> PurchaseController : result set
-PurchaseController -> Server : format response (filter out refunded/active returns for user flow)
-alt admin
-  PurchaseController -> Server : include buyer info and payment details
-end
-Server -> APIClient : 200 { purchases: [...] }
-APIClient -> Frontend : resolve data
-Frontend -> User : render list (order id, date, items, amount, status)
+== User Search Flow ==
 
-note over PurchaseController: Keyword semantics:
-- matches sale.id (contains)
-- matches product.title (contains, insensitive)
-- admin additionally matches buyer.email and buyer.name
+User -> Frontend : Enter filters:\n- status (COMPLETED, PENDING, etc.)\n- startDate / endDate\n- keyword (search term)
+activate Frontend
+
+Frontend -> APIClient : GET /api/purchases\n?status=COMPLETED,PENDING\n&startDate=2024-01-01\n&endDate=2024-12-31\n&keyword=laptop
+activate APIClient
+
+APIClient -> Server : HTTP GET /api/purchases\nwith query parameters
+activate Server
+
+Server -> Server : Extract auth0Id from\nOIDC session (req.oidc.user.sub)
+
+Server -> Prisma : findUnique(User)\nwhere: { auth0Id }
+activate Prisma
+
+Prisma -> DB : SELECT * FROM users\nWHERE auth0Id = ?
+activate DB
+DB --> Prisma : User record
+deactivate DB
+
+Prisma --> Server : User object
+deactivate Prisma
+
+Server -> Server : Build dynamic Prisma where clause
+note right of Server
+  where = {
+    buyerId: user.id,
+    status: { in: ['COMPLETED', 'PENDING'] },
+    createdAt: { gte: startDate, lte: endDate },
+    OR: [
+      { id: { contains: 'laptop' } },
+      { items: { some: { product: {
+        title: { contains: 'laptop', mode: 'insensitive' }
+      }}}}
+    ]
+  }
 end note
+
+Server -> Prisma : findMany(Sale)\nwith dynamic where clause\ninclude: items, payment, products
+activate Prisma
+
+Prisma -> DB : SELECT sales.*, sale_items.*, products.*\nFROM sales\nJOIN sale_items ON sales.id = sale_items.saleId\nJOIN products ON sale_items.productId = products.id\nWHERE sales.buyerId = ?\n  AND sales.status IN ('COMPLETED', 'PENDING')\n  AND sales.createdAt BETWEEN ? AND ?\n  AND (sales.id LIKE '%laptop%'\n    OR products.title ILIKE '%laptop%')\nORDER BY sales.createdAt DESC
+activate DB
+
+DB --> Prisma : Sale records with items and products
+deactivate DB
+
+Prisma --> Server : Sales array
+deactivate Prisma
+
+Server -> Prisma : Get active return requests\nfor this user
+activate Prisma
+
+Prisma -> DB : SELECT saleId FROM return_requests\nWHERE userId = ?\n  AND status NOT IN ('CLOSED', 'REJECTED')
+activate DB
+DB --> Prisma : Active return saleIds
+deactivate DB
+
+Prisma --> Server : Set of saleIds with returns
+deactivate Prisma
+
+Server -> Server : Filter out purchases with:\n- active return requests\n- REFUNDED status
+note right of Server
+  User flow only shows purchases
+  eligible for returns to prevent
+  duplicate return requests
+end note
+
+Server --> APIClient : 200 OK\n{ success: true,\n  purchases: [filtered sales] }
+deactivate Server
+
+APIClient --> Frontend : Resolve purchase data
+deactivate APIClient
+
+Frontend --> User : Display filtered purchases\n(Order ID, date, items, amount, status)
+deactivate Frontend
+
+== Admin Search Flow ==
+
+User -> Frontend : Admin enters same filters
+activate Frontend
+
+Frontend -> APIClient : GET /api/admin/dashboard/purchases\n?status=COMPLETED\n&keyword=john@example.com
+activate APIClient
+
+APIClient -> Server : HTTP GET /api/admin/dashboard/purchases
+activate Server
+
+Server -> Server : Check admin authorization\n(email in admin list)
+
+alt User is Admin
+  Server -> Server : Build enhanced where clause
+  note right of Server
+    where = {
+      status: { in: ['COMPLETED'] },
+      OR: [
+        { id: { contains: 'john@example.com' } },
+        { items: { some: { product: {
+          title: { contains: 'john@example.com',
+            mode: 'insensitive' }
+        }}}},
+        { buyer: { email: {
+          contains: 'john@example.com',
+          mode: 'insensitive' }}},
+        { buyer: { name: {
+          contains: 'john@example.com',
+          mode: 'insensitive' }}}
+      ]
+    }
+    
+    Admin search includes buyer info!
+  end note
+  
+  Server -> Prisma : findMany(Sale)\nwith enhanced where\ninclude: buyer, items, products, payment
+  activate Prisma
+  
+  Prisma -> DB : SELECT sales.*, users.*,\n  sale_items.*, products.*, payments.*\nFROM sales\nJOIN users ON sales.buyerId = users.id\nJOIN sale_items ON sales.id = sale_items.saleId\nJOIN products ON sale_items.productId = products.id\nLEFT JOIN payments ON sales.id = payments.saleId\nWHERE sales.status = 'COMPLETED'\n  AND (sales.id LIKE '%john@example.com%'\n    OR products.title ILIKE '%john@example.com%'\n    OR users.email ILIKE '%john@example.com%'\n    OR users.name ILIKE '%john@example.com%')\nORDER BY sales.createdAt DESC
+  activate DB
+  
+  DB --> Prisma : Complete sale records
+  deactivate DB
+  
+  Prisma --> Server : Sales with buyer info
+  deactivate Prisma
+  
+  Server -> Server : Format response with:\n- Buyer details (id, email, name, picture)\n- Complete sale information\n- Payment status\n- All items and products
+  
+  Server --> APIClient : 200 OK\n{ success: true,\n  purchases: [all matching sales] }
+  deactivate Server
+  
+  APIClient --> Frontend : Resolve admin data
+  deactivate APIClient
+  
+  Frontend --> User : Display admin purchase view\n(with buyer info and full details)
+  deactivate Frontend
+  
+else User is Not Admin
+  Server --> APIClient : 403 Forbidden\n{ error: 'Admin access required' }
+  APIClient --> Frontend : Authorization error
+  Frontend --> User : Show access denied
+end
+
+note over Server, DB
+  **Search Implementation Details:**
+  
+  Customer Search (/api/purchases):
+  - Scoped to user's own purchases (buyerId filter)
+  - Keyword matches: sale.id, product.title
+  - Filters out: REFUNDED sales, active return requests
+  - Purpose: Allow users to initiate returns on eligible purchases
+  
+  Admin Search (/api/admin/dashboard/purchases):
+  - Global search across all purchases
+  - Enhanced keyword matches: sale.id, product.title, buyer.email, buyer.name
+  - Includes: Full buyer information, payment details
+  - No filtering of refunded/returned items
+  - Purpose: Admin oversight and customer support
+  
+  **Supported Filters:**
+  - status: single value or comma-separated (e.g., "COMPLETED,PENDING")
+  - startDate: ISO date string for lower bound
+  - endDate: ISO date string for upper bound
+  - keyword/q: search term for flexible matching
+  
+  **Performance Optimizations:**
+  - Indexed fields: buyerId, status, createdAt
+  - Prisma relation includes for efficient joins
+  - Database-level filtering (pushed down to SQL)
+end note
+
 @enduml

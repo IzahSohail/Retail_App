@@ -1,0 +1,306 @@
+@startuml
+title System Sequence Diagram - Purchase Flow with Notifications
+
+actor Buyer
+participant "Frontend\n(React)" as Frontend
+participant "server.js\nPOST /api/purchase" as Server
+participant "PaymentService" as Payment
+participant "MockPaymentAdapter" as Adapter
+participant "Prisma\nClient" as Prisma
+database "PostgreSQL" as DB
+participant "Auth0\nOIDC" as Auth0
+
+== Authentication Phase ==
+
+Buyer -> Frontend : Browse products and select item
+activate Frontend
+
+Frontend -> Auth0 : Check authentication status
+activate Auth0
+Auth0 --> Frontend : User authenticated with JWT
+deactivate Auth0
+
+note right of Frontend
+  User must be authenticated
+  via Auth0 OIDC to purchase
+end note
+
+== Purchase Initiation ==
+
+Buyer -> Frontend : Click "Purchase" button\n(productId, quantity, paymentMethod)
+Frontend -> Frontend : Generate idempotency key\n(client-side UUID)
+
+Frontend -> Server : POST /api/purchase\nBody: { productId, quantity, paymentMethod }\nHeaders: { idempotency-key, auth }
+activate Server
+
+Server -> Server : Extract user from OIDC session\n(req.oidc.user.sub)
+
+== Idempotency Check ==
+
+Server -> Prisma : Check for existing sale\nwith idempotencyKey
+activate Prisma
+
+Prisma -> DB : SELECT * FROM sales\nWHERE idempotencyKey = ?
+activate DB
+DB --> Prisma : Existing sale or null
+deactivate DB
+
+Prisma --> Server : Sale record (if exists)
+deactivate Prisma
+
+alt Sale Already Exists
+  Server --> Frontend : 200 OK\n{ success: true, message: "Already processed",\n  saleId, status, payment }
+  Frontend --> Buyer : Show existing order details
+  note right of Frontend
+    Idempotency prevents duplicate charges
+    for retried requests with same key
+  end note
+else Sale Does Not Exist
+  
+  == Phase 1: User Upsert & Stock Reservation (Atomic Transaction) ==
+  
+  Server -> Prisma : Begin transaction
+  activate Prisma
+  
+  Prisma -> DB : INSERT INTO users\nON CONFLICT (auth0Id)\nDO UPDATE lastLogin\nRETURNING *
+  activate DB
+  note right of DB
+    Upsert buyer to handle first-time
+    login race conditions
+  end note
+  DB --> Prisma : User record
+  
+  Prisma -> DB : UPDATE products\nWHERE id = ? AND active = true\n  AND sellerId != buyerId\n  AND stock >= quantity\nSET stock = stock - quantity
+  note right of DB
+    Atomic stock reservation with:
+    - Product exists and active
+    - Not buyer's own product
+    - Sufficient stock available
+    All validated in WHERE clause
+  end note
+  
+  alt Stock Reservation Success
+    DB --> Prisma : 1 row updated
+    
+    Prisma -> DB : SELECT * FROM products WHERE id = ?
+    DB --> Prisma : Product details
+    
+    Prisma -> Prisma : Calculate totals:\n- subtotal = unitPrice × quantity\n- tax = subtotal × 0.05 (5%)\n- fees = subtotal × 0.02 (2%)\n- total = subtotal + tax + fees
+    
+    Prisma -> DB : INSERT INTO sales\n(buyerId, status='PENDING',\n subtotalMinor, taxMinor, feesMinor,\n totalMinor, idempotencyKey)
+    DB --> Prisma : New sale record
+    
+    Prisma -> DB : INSERT INTO sale_items\n(saleId, productId, quantity,\n unitMinor, lineTotalMinor)
+    DB --> Prisma : Sale item record
+    deactivate DB
+    
+    Prisma --> Server : { sale, product }
+    deactivate Prisma
+    
+  else Stock Reservation Failed
+    DB --> Prisma : 0 rows updated
+    deactivate DB
+    Prisma --> Server : Stock reservation failed
+    deactivate Prisma
+    
+    Server -> Prisma : Get product details for error
+    activate Prisma
+    Prisma -> DB : SELECT * FROM products WHERE id = ?
+    activate DB
+    DB --> Prisma : Product details
+    deactivate DB
+    Prisma --> Server : Product info
+    deactivate Prisma
+    
+    alt Product Not Found
+      Server --> Frontend : 400 Bad Request\n{ error: "Product not found" }
+    else Product Inactive
+      Server --> Frontend : 400 Bad Request\n{ error: "Product no longer available" }
+    else Self-Purchase Attempt
+      Server --> Frontend : 400 Bad Request\n{ error: "Cannot purchase your own product" }
+    else Insufficient Stock
+      Server --> Frontend : 400 Bad Request\n{ error: "Insufficient stock. Only X available" }
+    end
+    
+    Frontend --> Buyer : Display error message
+  end
+  
+  == Phase 2: Payment Processing with Retry & Circuit Breaker ==
+  
+  Server -> Payment : processPayment({\n  amount: totalMinor,\n  currency: 'AED',\n  paymentMethod,\n  idempotencyKey: saleId\n})
+  activate Payment
+  
+  Payment -> Payment : Check idempotency cache
+  note right of Payment
+    If payment already processed
+    for this saleId, return cached result
+  end note
+  
+  Payment -> Payment : Check circuit breaker state
+  
+  alt Circuit Breaker OPEN
+    Payment --> Server : Throw Error\n{ code: 'CIRCUIT_OPEN',\n  message: 'Service unavailable' }
+    
+    Server -> Prisma : Rollback transaction
+    activate Prisma
+    Prisma -> DB : UPDATE sales\nSET status = 'CANCELED'\nWHERE id = ?
+    activate DB
+    DB --> Prisma : Updated
+    Prisma -> DB : UPDATE products\nSET stock = stock + quantity\nWHERE id = ?
+    DB --> Prisma : Stock restored
+    deactivate DB
+    Prisma --> Server : Rollback complete
+    deactivate Prisma
+    
+    Server --> Frontend : 500 Error\n{ error: "Payment service unavailable" }
+    Frontend --> Buyer : Show retry message
+    
+  else Circuit Breaker CLOSED or HALF_OPEN
+    
+    loop Retry up to 3 times with exponential backoff
+      Payment -> Adapter : processPayment(request)
+      activate Adapter
+      
+      Adapter -> Adapter : Simulate payment processing\n(delay, failure rate, network errors)
+      
+      alt Payment Approved
+        Adapter --> Payment : { success: true,\n  status: 'APPROVED',\n  transactionId }
+        deactivate Adapter
+        
+        Payment -> Payment : Record success for circuit breaker
+        Payment -> Payment : Cache result
+        Payment --> Server : Payment result (success)
+        deactivate Payment
+        
+        note right of Payment
+          Circuit breaker:
+          - Resets failure count
+          - If HALF_OPEN, increments success count
+          - If success threshold met, moves to CLOSED
+        end note
+        
+      else Payment Declined
+        Adapter --> Payment : { success: false,\n  status: 'DECLINED',\n  message }
+        deactivate Adapter
+        
+        Payment -> Payment : Record failure
+        Payment -> Payment : Cache result
+        Payment --> Server : Payment result (declined)
+        deactivate Payment
+        
+      else Network Error (Retryable)
+        Adapter --> Payment : Throw NetworkError
+        deactivate Adapter
+        
+        Payment -> Payment : Record failure
+        Payment -> Payment : Increment failure count
+        
+        alt Retries Remaining
+          Payment -> Payment : Calculate backoff delay\n(base × 2^attempt)
+          Payment -> Payment : Wait (exponential backoff)
+          note right of Payment
+            Retry delays:
+            - Attempt 1: 1000ms
+            - Attempt 2: 2000ms
+            - Attempt 3: 4000ms
+          end note
+        else All Retries Exhausted
+          Payment --> Server : Throw Error\n"Payment failed after retries"
+          deactivate Payment
+          
+          note right of Payment
+            Circuit breaker failure count incremented.
+            If threshold (5) reached, circuit opens.
+          end note
+        end
+      end
+    end
+  end
+  
+  == Phase 3: Finalize Sale (Atomic Transaction) ==
+  
+  Server -> Prisma : Begin final transaction
+  activate Prisma
+  
+  Prisma -> DB : INSERT INTO payments\n(saleId, method, status,\n approvalRef, failureReason)
+  activate DB
+  DB --> Prisma : Payment record created
+  
+  alt Payment Successful
+    Prisma -> DB : UPDATE sales\nSET status = 'COMPLETED',\n  completedAt = NOW()\nWHERE id = ? AND status = 'PENDING'
+    note right of DB
+      Guarded state change ensures
+      sale is only completed once
+    end note
+    DB --> Prisma : Sale completed
+    deactivate DB
+    
+    Prisma --> Server : { sale, payment, success: true }
+    deactivate Prisma
+    
+    Server -> Prisma : Get updated product stock
+    activate Prisma
+    Prisma -> DB : SELECT stock FROM products\nWHERE id = ?
+    activate DB
+    DB --> Prisma : Current stock level
+    deactivate DB
+    Prisma --> Server : Updated product
+    deactivate Prisma
+    
+    Server --> Frontend : 200 OK\n{ success: true,\n  message: "Purchase completed",\n  saleId, newStock }
+    deactivate Server
+    
+    Frontend --> Buyer : ✅ Display success message\nShow order confirmation\n(Order ID, receipt, items)
+    
+  else Payment Failed/Declined
+    Prisma -> DB : UPDATE sales\nSET status = 'CANCELED'\nWHERE id = ? AND status = 'PENDING'
+    activate DB
+    DB --> Prisma : Sale canceled
+    
+    Prisma -> DB : UPDATE products\nSET stock = stock + quantity\nWHERE id = ?
+    note right of DB
+      Restore reserved stock since
+      payment failed
+    end note
+    DB --> Prisma : Stock restored
+    deactivate DB
+    
+    Prisma --> Server : { sale, payment, success: false }
+    deactivate Prisma
+    
+    Server --> Frontend : 400 Bad Request\n{ success: false,\n  error: "Payment failed: reason",\n  saleId }
+    deactivate Server
+    
+    Frontend --> Buyer : ❌ Display error message\n"Payment declined: reason"\nOffer retry or alternative payment
+    
+  end
+  
+  deactivate Frontend
+end
+
+== Implicit Notifications (Current Architecture) ==
+
+note over Buyer, DB
+  Current Implementation:
+  - No explicit notification service exists yet
+  - Buyer receives immediate feedback via HTTP response
+  - Frontend displays success/error messages in UI
+  - Order history accessible via GET /api/purchases
+  
+  Future Enhancements for Notifications:
+  1. Email confirmation after successful purchase
+     - Order details, receipt, tracking info
+  2. SMS notifications for order updates
+  3. Push notifications for mobile app
+  4. Seller notifications when item is purchased
+  5. Admin alerts for failed payments/low stock
+  
+  Implementation Approach:
+  - Add NotificationService in backend/src/services/
+  - Integrate with email provider (SendGrid, SES)
+  - Use event-driven architecture (purchase.completed event)
+  - Queue notifications for async processing
+  - Store notification history in database
+end note
+
+@enduml

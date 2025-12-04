@@ -1,0 +1,162 @@
+@startuml
+title Admin Dashboard - Purchase Search and Filtering Sequence Diagram
+
+actor Admin
+participant "AdminPanel\n(React)" as AdminUI
+participant "api.jsx\n(Axios Client)" as API
+participant "server.js\n/api/admin/dashboard/*" as Server
+participant "admin.dashboard.js\nRoutes" as AdminRoutes
+participant "Prisma\nClient" as Prisma
+database "PostgreSQL\nDatabase" as DB
+
+== Admin Accesses Purchase Dashboard ==
+
+Admin -> AdminUI : Navigate to Admin Dashboard
+activate AdminUI
+
+AdminUI -> API : GET /api/admin/dashboard/purchases
+activate API
+note right of API
+  Initial load without filters
+  Query params: (none)
+end note
+
+API -> Server : HTTP GET /api/admin/dashboard/purchases
+activate Server
+
+Server -> AdminRoutes : requireAdmin middleware check
+activate AdminRoutes
+note right of AdminRoutes
+  Check if user email is in:
+  ['izahs2003@gmail.com', 'tj2286@nyu.edu']
+end note
+
+AdminRoutes -> AdminRoutes : Validate admin access
+alt User is Admin
+  AdminRoutes -> Prisma : findMany(Sale) with full includes
+  activate Prisma
+  
+  Prisma -> DB : SELECT * FROM sales\nJOIN buyers, items, products\nORDER BY createdAt DESC
+  activate DB
+  DB --> Prisma : Sale records with buyer, items, products
+  deactivate DB
+  
+  Prisma --> AdminRoutes : Array of sales
+  deactivate Prisma
+  
+  AdminRoutes --> Server : { success: true, purchases: [...] }
+  deactivate AdminRoutes
+  
+  Server --> API : 200 OK with purchases
+  deactivate Server
+  
+  API --> AdminUI : Resolve purchases data
+  deactivate API
+  
+  AdminUI --> Admin : Display purchases table
+  deactivate AdminUI
+else User is Not Admin
+  AdminRoutes --> Server : 403 Forbidden
+  Server --> API : { error: 'Admin access required' }
+  API --> AdminUI : Error response
+  AdminUI --> Admin : Show access denied message
+end
+
+== Admin Applies Filters ==
+
+Admin -> AdminUI : Apply filters:\n- Status: COMPLETED, PENDING\n- Date Range: 2024-01-01 to 2024-12-31\n- Keyword: "laptop"
+activate AdminUI
+
+AdminUI -> API : GET /api/admin/dashboard/purchases?\nstatus=COMPLETED,PENDING&\nstartDate=2024-01-01&\nendDate=2024-12-31&\nkeyword=laptop
+activate API
+
+note right of API
+  Query parameters:
+  - status: comma-separated values
+  - startDate: ISO date string
+  - endDate: ISO date string
+  - keyword: search term
+end note
+
+API -> Server : HTTP GET with query params
+activate Server
+
+Server -> AdminRoutes : Route handler with req.query
+activate AdminRoutes
+
+AdminRoutes -> AdminRoutes : Parse and build Prisma where clause
+note right of AdminRoutes
+  Build dynamic where clause:
+  
+  1. Status filter:
+     - Split by comma
+     - If single: where.status = 'COMPLETED'
+     - If multiple: where.status = { in: ['COMPLETED', 'PENDING'] }
+  
+  2. Date range filter:
+     - where.createdAt.gte = new Date(startDate)
+     - where.createdAt.lte = new Date(endDate)
+  
+  3. Keyword search (OR conditions):
+     - sale.id contains 'laptop'
+     - product.title contains 'laptop' (case-insensitive)
+     - buyer.email contains 'laptop' (case-insensitive)
+     - buyer.name contains 'laptop' (case-insensitive)
+end note
+
+AdminRoutes -> Prisma : findMany with complex where clause
+activate Prisma
+
+Prisma -> DB : SELECT * FROM sales\nWHERE status IN ('COMPLETED', 'PENDING')\n  AND createdAt >= '2024-01-01'\n  AND createdAt <= '2024-12-31'\n  AND (id LIKE '%laptop%'\n    OR EXISTS (SELECT 1 FROM sale_items si\n      JOIN products p ON si.productId = p.id\n      WHERE si.saleId = sales.id\n      AND p.title ILIKE '%laptop%')\n    OR EXISTS (SELECT 1 FROM users u\n      WHERE u.id = sales.buyerId\n      AND (u.email ILIKE '%laptop%'\n        OR u.name ILIKE '%laptop%')))\nJOIN buyers, items, products\nORDER BY createdAt DESC
+activate DB
+
+DB --> Prisma : Filtered sale records
+deactivate DB
+
+Prisma --> AdminRoutes : Filtered sales array
+deactivate Prisma
+
+AdminRoutes -> AdminRoutes : Format response with buyer info
+note right of AdminRoutes
+  Map each purchase to include:
+  - Sale details (id, status, total, dates)
+  - Buyer info (id, email, name, picture)
+  - Items with product details
+  - Payment information
+end note
+
+AdminRoutes --> Server : { success: true, purchases: [filtered] }
+deactivate AdminRoutes
+
+Server --> API : 200 OK with filtered results
+deactivate Server
+
+API --> AdminUI : Resolve filtered data
+deactivate API
+
+AdminUI --> Admin : Display filtered purchases
+deactivate AdminUI
+
+== Low Stock Alert (Implicit in Product Management) ==
+
+note over Admin, DB
+  Note: Low stock alerts are not explicitly implemented
+  as a notification system, but admins can:
+  
+  1. View product inventory via /api/products
+  2. Filter products by stock levels
+  3. Monitor stock in real-time through admin dashboard
+  
+  Current implementation focuses on:
+  - Atomic stock updates during purchases
+  - Stock reservation in PENDING sales
+  - Stock restoration on CANCELED sales
+  - Defective items tracking in RMA system
+  
+  Future enhancement could add:
+  - Automated low stock threshold alerts
+  - Email/push notifications to admins
+  - Dashboard widget for low stock products
+end note
+
+@enduml

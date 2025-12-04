@@ -1,127 +1,428 @@
 @startuml
-' Updated class diagram including new controllers/services not present in original diagrams
-package "Backend (Node / Express)" {
-  class Server {
-    +start()
+' Updated class diagram reflecting current models, services, and architecture
+title Class Diagram - Complete System Architecture
+
+package "Backend Routes (Express)" {
+  class AdminDashboardRoutes {
+    +getVerificationRequests()
+    +reviewVerificationRequest(id, action)
+    +getBusinesses()
+    +verifyBusiness(id, action)
+    +getPurchases(filters)
   }
 
-  class PurchaseController {
-    +getUserPurchases(params)
-    +getAdminPurchases(params)
+  class AdminFlashSalesRoutes {
+    +createFlashSale(data)
+    +getFlashSales()
+    +updateFlashSale(id, data)
   }
 
-  class AuthController {
-    +afterCallback(session)
-    +login(req)
+  class BusinessRoutes {
+    +submitBusinessVerification(data)
+    +getBusinessProfile()
   }
 
-  class DevTestRoutes {
-    +purchasesSample()
-    +adminPurchasesSample()
+  class VerificationRoutes {
+    +submitVerification(data)
+    +getVerificationStatus()
   }
 
-  class SupabaseClient {
-    -url
-    -serviceRoleKey
-    +uploadProductImage(buffer, name, id)
+  class RMARoutes {
+    +createReturnRequest(data)
+    +getReturnRequests()
+    +updateReturnStatus(id, status)
+    +uploadReturnPhotos(files)
   }
 
-  class PrismaClientWrapper {
-    -prisma
-    +findSales(filter)
-    +findProducts(filter)
+  class PricingRoutes {
+    +calculatePrice(data)
+    +getFlashSalePrice(productId)
   }
+}
 
+package "Backend Services" {
   class PaymentService {
-    +processPayment(opts)
+    -adapter: MockPaymentAdapter
+    -maxRetries: number
+    -circuitBreaker: CircuitBreakerState
+    -paymentCache: Map
+    +processPayment(request): Promise
+    +refundPayment(txnId, amount): Promise
+    -_calculateBackoff(attempt): number
   }
 
   class MockPaymentAdapter {
-    +processPayment(amount)
+    -failureRate: number
+    -transactions: Map
+    +processPayment(request): Promise
+    +refundPayment(txnId, amount): Promise
+    +getTransaction(txnId): Transaction
   }
 
   class RMAService {
-    +createReturnRequest(data)
-    +updateStatus(id, status)
+    +createReturnRequest(data): Promise
+    +getReturnRequestsForUser(userId): Promise
+    +getAllReturnRequests(): Promise
+    +updateReturnStatus(id, status): Promise
+    +processRefund(rmaId): Promise
+    +normalizeReturnReason(input): string
   }
 
-  class CartService {
-    +addToCart(userId, productId, qty)
-    +checkout(cartId, opts)
+  class FlashSaleService {
+    +getActiveFlashSales(date): Promise
+    +applyDiscounts(items, flashSales): Array
+    +isProductInFlashSale(productId): boolean
   }
 
-  class NotificationService {
-    +notifyUser(userId, message)
+  class CatalogETLService {
+    +importProducts(data): Promise
+    +validateProductData(data): boolean
+    +transformProductData(data): Object
   }
 
-  Server o-- PurchaseController : exposes
-  Server o-- AuthController
-  Server o-- DevTestRoutes
+  class SupabaseClient {
+    -url: string
+    -serviceRoleKey: string
+    +uploadProductImage(buffer, name, id): Promise
+    +uploadReturnPhoto(buffer, rmaId): Promise
+  }
 
-  PurchaseController ..> PrismaClientWrapper : queries
-  PurchaseController ..> SupabaseClient : (optional image URLs)
-  PurchaseController ..> PaymentService : coordinates
-  PurchaseController ..> RMAService : references returns
-
-  PaymentService ..> MockPaymentAdapter : uses <<adapter>>
-  PaymentService --> PrismaClientWrapper : writes payments
-
-  RMAService --> PrismaClientWrapper
-  CartService --> PrismaClientWrapper
-  NotificationService ..> SupabaseClient : uploads (optional)
+  class PrismaClientWrapper {
+    -prisma: PrismaClient
+    +findSales(filter): Promise
+    +findProducts(filter): Promise
+    +createSale(data): Promise
+    +updateSale(id, data): Promise
+  }
 }
 
-package "Frontend (React)" {
-  class ReturnRefundsComponent {
-    +render()
-    +loadPurchases(params)
-  }
-
-  class AdminPanel {
-    +render()
-    +loadSales(params)
-  }
-
-  class ApiClient {
-    +get(path, params)
-    +post(path, body)
-  }
-
-  ReturnRefundsComponent ..> ApiClient
-  AdminPanel ..> ApiClient
-}
-
-package "Database (Postgres via Prisma)" {
-  class Sale {
-    id : UUID
-    buyerId : UUID
-    status : enum
-    createdAt : DateTime
-    totalMinor : Int
-  }
-
-  class SaleItem {
-    id : UUID
-    saleId : UUID
-    productId : UUID
-    quantity : Int
+package "Database Models (Prisma/Postgres)" {
+  class User {
+    +id: string
+    +email: string
+    +auth0Id: string
+    +name: string
+    +role: UserRole
+    +creditMinor: number
+    +isVerified: boolean
+    +phoneNumber: string
+    +studentId: string
+    +university: string
   }
 
   class Product {
-    id : UUID
-    title : String
-    priceMinor : Int
+    +id: string
+    +title: string
+    +description: string
+    +priceMinor: number
+    +stock: number
+    +active: boolean
+    +categoryId: string
+    +sellerId: string
+    +imageUrl: string
   }
 
-  Sale "1" <-- "*" SaleItem
-  SaleItem --> Product
-  PrismaClientWrapper ..> Sale
-  PrismaClientWrapper ..> SaleItem
-  PrismaClientWrapper ..> Product
+  class Category {
+    +id: string
+    +name: string
+    +slug: string
+  }
+
+  class Sale {
+    +id: string
+    +buyerId: string
+    +status: SaleStatus
+    +subtotalMinor: number
+    +taxMinor: number
+    +totalMinor: number
+    +idempotencyKey: string
+    +refundedMinorTotal: number
+  }
+
+  class SaleItem {
+    +id: string
+    +saleId: string
+    +productId: string
+    +quantity: number
+    +unitMinor: number
+    +lineTotalMinor: number
+  }
+
+  class Payment {
+    +id: string
+    +saleId: string
+    +method: PaymentMethod
+    +status: PaymentStatus
+    +approvalRef: string
+    +failureReason: string
+  }
+
+  class Cart {
+    +id: string
+    +userId: string
+  }
+
+  class CartItem {
+    +id: string
+    +cartId: string
+    +productId: string
+    +quantity: number
+  }
+
+  class FlashSale {
+    +id: string
+    +title: string
+    +discountType: DiscountType
+    +discountValue: number
+    +startsAt: DateTime
+    +endsAt: DateTime
+  }
+
+  class FlashSaleItem {
+    +id: string
+    +flashSaleId: string
+    +productId: string
+  }
+
+  class ReturnRequest {
+    +id: string
+    +rmaNumber: string
+    +saleId: string
+    +userId: string
+    +status: RmaStatus
+    +reason: string
+    +details: string
+    +photoUrls: string[]
+    +completedAt: DateTime
+  }
+
+  class ReturnItem {
+    +id: string
+    +returnRequestId: string
+    +saleItemId: string
+    +quantity: number
+    +conditionNotes: string
+  }
+
+  class ReturnShipment {
+    +id: string
+    +returnRequestId: string
+    +carrier: string
+    +trackingNumber: string
+    +shippedAt: DateTime
+    +receivedAt: DateTime
+  }
+
+  class Inspection {
+    +id: string
+    +returnRequestId: string
+    +inspectorId: string
+    +result: InspectionResult
+    +notes: string
+  }
+
+  class Refund {
+    +id: string
+    +returnRequestId: string
+    +paymentId: string
+    +method: RefundMethod
+    +amountMinor: number
+    +status: PaymentStatus
+    +processedAt: DateTime
+  }
+
+  class RmaAuditLog {
+    +id: string
+    +returnRequestId: string
+    +actorId: string
+    +action: string
+    +message: string
+  }
+
+  class DefectiveItems {
+    +id: string
+    +returnRequestId: string
+    +productId: string
+    +stock: number
+  }
+
+  class B2B {
+    +id: string
+    +userId: string
+    +businessName: string
+    +registeredAddress: string
+    +tradeLicenseUrl: string
+    +status: B2BStatus
+    +rejectionReason: string
+  }
+
+  class VerificationRequest {
+    +id: string
+    +userId: string
+    +status: string
+    +studentId: string
+    +university: string
+    +phoneNumber: string
+    +reviewedBy: string
+    +rejectionReason: string
+  }
+
+  enum UserRole {
+    USER
+    BUSINESS
+    ADMIN
+  }
+
+  enum SaleStatus {
+    PENDING
+    COMPLETED
+    CANCELED
+    REFUND_PENDING
+    REFUNDED
+  }
+
+  enum PaymentMethod {
+    CASH
+    CARD
+    STORE_CREDIT
+  }
+
+  enum PaymentStatus {
+    APPROVED
+    DECLINED
+    REFUNDED
+    PARTIALLY_REFUNDED
+  }
+
+  enum RmaStatus {
+    INSPECTION
+    APPROVED_AWAITING_SHIPMENT
+    REJECTED
+    SHIPPED
+    COMPLETED
+    CLOSED
+  }
+
+  enum RefundMethod {
+    ORIGINAL_PAYMENT
+    STORE_CREDIT
+    MANUAL
+  }
 }
 
-note "Search/Filter responsibilities:
-- PurchaseController builds dynamic Prisma `where` clauses
-- Keyword matches sale.id (contains) and product.title (insensitive)
-- Admin search also matches buyer.email and buyer.name" as N1
+package "Frontend (React/Vite)" {
+  class AdminPanel {
+    +render()
+    +loadPurchases(filters)
+    +loadVerificationRequests()
+    +reviewVerification(id, action)
+  }
+
+  class ReturnRefundsComponent {
+    +render()
+    +loadPurchases(filters)
+    +submitReturnRequest(data)
+  }
+
+  class BusinessPanel {
+    +render()
+    +submitBusinessVerification(data)
+  }
+
+  class ApiClient {
+    +get(path, params): Promise
+    +post(path, body): Promise
+    +put(path, body): Promise
+    +delete(path): Promise
+  }
+}
+
+' Route Dependencies
+AdminDashboardRoutes ..> PrismaClientWrapper
+AdminFlashSalesRoutes ..> FlashSaleService
+BusinessRoutes ..> PrismaClientWrapper
+RMARoutes ..> RMAService
+RMARoutes ..> SupabaseClient
+
+' Service Dependencies
+PaymentService *-- MockPaymentAdapter
+PaymentService ..> PrismaClientWrapper
+RMAService ..> PrismaClientWrapper
+RMAService ..> PaymentService
+FlashSaleService ..> PrismaClientWrapper
+CatalogETLService ..> PrismaClientWrapper
+
+' Model Relationships
+User "1" -- "0..*" Sale : buyer
+User "1" -- "0..*" Product : seller
+User "1" -- "0..1" Cart
+User "1" -- "0..1" B2B
+User "1" -- "0..*" VerificationRequest
+User "1" -- "0..*" ReturnRequest
+User "1" -- "0..*" Inspection : inspector
+
+Sale "1" *-- "1..*" SaleItem
+Sale "1" *-- "0..1" Payment
+Sale "1" *-- "0..*" ReturnRequest
+
+SaleItem "*" -- "1" Product
+Cart "1" *-- "0..*" CartItem
+CartItem "*" -- "1" Product
+
+FlashSale "1" *-- "0..*" FlashSaleItem
+FlashSaleItem "*" -- "1" Product
+
+ReturnRequest "1" *-- "1..*" ReturnItem
+ReturnRequest "1" *-- "0..*" ReturnShipment
+ReturnRequest "1" *-- "0..*" Inspection
+ReturnRequest "1" *-- "0..*" Refund
+ReturnRequest "1" *-- "0..*" RmaAuditLog
+ReturnRequest "1" *-- "0..*" DefectiveItems
+
+ReturnItem "*" -- "0..1" SaleItem
+Refund "*" -- "0..1" Payment
+DefectiveItems "*" -- "1" Product
+
+Product "*" -- "1" Category
+
+' Frontend to Backend
+AdminPanel ..> ApiClient
+ReturnRefundsComponent ..> ApiClient
+BusinessPanel ..> ApiClient
+ApiClient ..> AdminDashboardRoutes : HTTP
+ApiClient ..> RMARoutes : HTTP
+
+' Data Access
+PrismaClientWrapper ..> User
+PrismaClientWrapper ..> Product
+PrismaClientWrapper ..> Sale
+PrismaClientWrapper ..> ReturnRequest
+
+note right of AdminDashboardRoutes
+  Search/Filter Implementation:
+  - Dynamic Prisma where clauses
+  - Status: single or comma-separated
+  - Date range: startDate, endDate
+  - Keyword: matches sale.id, product.title
+  - Admin: also matches buyer.email, buyer.name
+end note
+
+note right of RMAService
+  RMA Workflow:
+  1. User creates return request
+  2. Auto-set status to INSPECTION
+  3. Admin reviews and approves/rejects
+  4. User ships item (SHIPPED status)
+  5. Admin inspects and processes refund
+  6. Status set to COMPLETED
+end note
+
+note right of PaymentService
+  Features:
+  - Retry with exponential backoff
+  - Circuit breaker pattern
+  - Idempotency caching
+  - Mock adapter for testing
+end note
+
 @enduml
