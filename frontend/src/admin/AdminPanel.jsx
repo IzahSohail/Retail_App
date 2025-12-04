@@ -36,13 +36,19 @@ export default function AdminPanel() {
     productIds: []
   });
 
+  // Track which tabs have been loaded (lazy loading)
+  const [loadedTabs, setLoadedTabs] = useState(new Set());
+  const [tabLoading, setTabLoading] = useState({});
+
   useEffect(() => {
-    loadData();
+    initializeAdmin();
   }, []);
 
-  const loadData = async () => {
+  // Initialize: load profile and default tab only
+  const initializeAdmin = async () => {
     try {
-      // Get profile
+      setLoading(true);
+      // Get profile first (needed for admin check)
       const profileRes = await fetch('/api/profile', { credentials: 'include' });
       const profileData = await profileRes.json();
       setUser(profileData.user);
@@ -53,39 +59,110 @@ export default function AdminPanel() {
         return;
       }
 
-      // Load students
-      const studentsRes = await fetch('/api/admin/verification-requests', { credentials: 'include' });
-      const studentsData = await studentsRes.json();
-      setStudents(studentsData.requests || []);
-
-      // Load businesses
-      const businessRes = await fetch('/api/admin/businesses', { credentials: 'include' });
-      const businessData = await businessRes.json();
-      setBusinesses(businessData.businesses || []);
-
-  // Load sales (use filtered loader)
-  await loadSales();
-
-      // Load products
-      const productsRes = await fetch('/api/products?limit=1000', { credentials: 'include' });
-      const productsData = await productsRes.json();
-      setProducts(productsData.items || []);
-
-      // Load flash sales
-      const flashSalesRes = await fetch('/api/admin/flash-sales', { credentials: 'include' });
-      const flashSalesData = await flashSalesRes.json();
-      setFlashSales(flashSalesData.sales || []);
-
-      // Load returns
-      const returnsRes = await fetch('/api/rma', { credentials: 'include' });
-      const returnsData = await returnsRes.json();
-      setReturns(returnsData.rmas || returnsData.returns || []);
-
+      // Load default tab (students) immediately
+      await loadTabData('students');
     } catch (error) {
-      console.error('Error loading data:', error);
+      console.error('Error initializing admin:', error);
     } finally {
       setLoading(false);
     }
+  };
+
+  // Load data for a specific tab (lazy loading)
+  const loadTabData = async (tabName) => {
+    // Skip if already loaded
+    if (loadedTabs.has(tabName)) {
+      return;
+    }
+
+    try {
+      setTabLoading(prev => ({ ...prev, [tabName]: true }));
+
+      switch (tabName) {
+        case 'students':
+          if (!loadedTabs.has('students')) {
+            const studentsRes = await fetch('/api/admin/verification-requests', { credentials: 'include' });
+            const studentsData = await studentsRes.json();
+            setStudents(studentsData.requests || []);
+            setLoadedTabs(prev => new Set([...prev, 'students']));
+          }
+          break;
+
+        case 'businesses':
+          if (!loadedTabs.has('businesses')) {
+            const businessRes = await fetch('/api/admin/businesses', { credentials: 'include' });
+            const businessData = await businessRes.json();
+            setBusinesses(businessData.businesses || []);
+            setLoadedTabs(prev => new Set([...prev, 'businesses']));
+          }
+          break;
+
+        case 'sales':
+          if (!loadedTabs.has('sales')) {
+            await loadSales();
+            setLoadedTabs(prev => new Set([...prev, 'sales']));
+          }
+          break;
+
+        case 'returns':
+          if (!loadedTabs.has('returns')) {
+            const returnsRes = await fetch('/api/rma', { credentials: 'include' });
+            const returnsData = await returnsRes.json();
+            setReturns(returnsData.rmas || returnsData.returns || []);
+            setLoadedTabs(prev => new Set([...prev, 'returns']));
+          }
+          break;
+
+        case 'products':
+          if (!loadedTabs.has('products')) {
+            const productsRes = await fetch('/api/products?limit=1000', { credentials: 'include' });
+            const productsData = await productsRes.json();
+            setProducts(productsData.items || []);
+            setLoadedTabs(prev => new Set([...prev, 'products']));
+          }
+          break;
+
+        case 'flashsales':
+          if (!loadedTabs.has('flashsales')) {
+            const flashSalesRes = await fetch('/api/admin/flash-sales', { credentials: 'include' });
+            const flashSalesData = await flashSalesRes.json();
+            setFlashSales(flashSalesData.sales || []);
+            setLoadedTabs(prev => new Set([...prev, 'flashsales']));
+          }
+          break;
+      }
+    } catch (error) {
+      console.error(`Error loading ${tabName} data:`, error);
+    } finally {
+      setTabLoading(prev => ({ ...prev, [tabName]: false }));
+    }
+  };
+
+  // Handle tab change with lazy loading
+  const handleTabChange = (tabName) => {
+    setActiveTab(tabName);
+    loadTabData(tabName);
+  };
+
+  // Refresh current tab data
+  const refreshCurrentTab = async () => {
+    const tabName = activeTab;
+    setLoadedTabs(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(tabName);
+      return newSet;
+    });
+    await loadTabData(tabName);
+  };
+
+  // Refresh a specific tab
+  const refreshTab = async (tabName) => {
+    setLoadedTabs(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(tabName);
+      return newSet;
+    });
+    await loadTabData(tabName);
   };
 
   // Load sales with optional filters
@@ -118,7 +195,7 @@ export default function AdminPanel() {
         body: JSON.stringify({ action, reason })
       });
       alert('Updated successfully');
-      loadData();
+      await refreshTab('students');
     } catch (error) {
       alert('Error: ' + error.message);
     }
@@ -135,7 +212,7 @@ export default function AdminPanel() {
         body: JSON.stringify({ action, reason: reason || '' })
       });
       alert('Updated successfully');
-      loadData();
+      await refreshTab('students');
     } catch (error) {
       alert('Error: ' + error.message);
     }
@@ -150,7 +227,7 @@ export default function AdminPanel() {
         credentials: 'include'
       });
       alert('Deleted successfully');
-      loadData();
+      await refreshTab('products');
     } catch (error) {
       alert('Error: ' + error.message);
     }
@@ -165,7 +242,7 @@ export default function AdminPanel() {
         credentials: 'include'
       });
       alert('Flash sale deleted successfully');
-      loadData();
+      await refreshTab('flashsales');
     } catch (error) {
       alert('Error: ' + error.message);
     }
@@ -213,7 +290,7 @@ export default function AdminPanel() {
           endsAt: '',
           productIds: []
         });
-        loadData();
+        await refreshTab('flashsales');
       } else {
         const data = await response.json();
         alert('Error: ' + (data.error || 'Failed to create flash sale'));
@@ -279,7 +356,7 @@ export default function AdminPanel() {
           endsAt: '',
           productIds: []
         });
-        loadData();
+        await refreshTab('flashsales');
       } else {
         const data = await response.json();
         alert('Error: ' + (data.error || 'Failed to update products'));
@@ -301,7 +378,7 @@ export default function AdminPanel() {
         body: JSON.stringify({ action, message })
       });
       alert(`Return ${action === 'authorize' ? 'approved' : 'rejected'} successfully!`);
-      loadData();
+      await refreshTab('returns');
     } catch (error) {
       alert('Error: ' + error.message);
     }
@@ -327,7 +404,7 @@ export default function AdminPanel() {
         body: JSON.stringify({ amountMinor, method, reason: 'Admin issued refund' })
       });
       alert('Refund issued successfully!');
-      loadData();
+      await refreshTab('returns');
     } catch (error) {
       alert('Error: ' + error.message);
     }
@@ -344,7 +421,7 @@ export default function AdminPanel() {
 
       if (res.ok) {
         alert('Status updated successfully!');
-        loadData();
+        await refreshTab('returns');
       } else {
         const data = await res.json();
         alert('Error: ' + (data.error || 'Failed to update status'));
@@ -378,38 +455,49 @@ export default function AdminPanel() {
       {/* Tabs */}
       <div className="flex space-x-4 mb-6 border-b">
         <button
-          onClick={() => setActiveTab('students')}
+          onClick={() => handleTabChange('students')}
           className={`pb-2 px-4 ${activeTab === 'students' ? 'border-b-2 border-blue-600 font-semibold' : ''}`}
+          disabled={tabLoading.students}
         >
           Student Verification ({students.filter(s => s.status === 'pending').length})
+          {tabLoading.students && <span className="ml-1 text-xs">⏳</span>}
         </button>
         <button
-          onClick={() => setActiveTab('businesses')}
+          onClick={() => handleTabChange('businesses')}
           className={`pb-2 px-4 ${activeTab === 'businesses' ? 'border-b-2 border-blue-600 font-semibold' : ''}`}
+          disabled={tabLoading.businesses}
         >
           Business Verification ({businesses.filter(b => b.status === 'PENDING').length})
+          {tabLoading.businesses && <span className="ml-1 text-xs">⏳</span>}
         </button>
         <button
-          onClick={() => setActiveTab('sales')}
+          onClick={() => handleTabChange('sales')}
           className={`pb-2 px-4 ${activeTab === 'sales' ? 'border-b-2 border-blue-600 font-semibold' : ''}`}
+          disabled={tabLoading.sales}
         >
           Sales Log ({sales.length})
+          {tabLoading.sales && <span className="ml-1 text-xs">⏳</span>}
         </button>
         <button
-          onClick={() => setActiveTab('returns')}
+          onClick={() => handleTabChange('returns')}
           className={`pb-2 px-4 ${activeTab === 'returns' ? 'border-b-2 border-blue-600 font-semibold' : ''}`}
+          disabled={tabLoading.returns}
         >
           Returns/Refunds ({returns.filter(r => r.status === 'INSPECTION').length})
+          {tabLoading.returns && <span className="ml-1 text-xs">⏳</span>}
         </button>
         <button
-          onClick={() => setActiveTab('flashsales')}
+          onClick={() => handleTabChange('flashsales')}
           className={`pb-2 px-4 ${activeTab === 'flashsales' ? 'border-b-2 border-blue-600 font-semibold' : ''}`}
+          disabled={tabLoading.flashsales}
         >
           Flash Sales ({flashSales.length})
+          {tabLoading.flashsales && <span className="ml-1 text-xs">⏳</span>}
         </button>
         <button
-          onClick={() => setActiveTab('products')}
+          onClick={() => handleTabChange('products')}
           className={`pb-2 px-4 ${activeTab === 'products' ? 'border-b-2 border-blue-600 font-semibold' : ''}`}
+          disabled={tabLoading.products}
         >
           Products ({products.length})
           {lowStockProducts.length > 0 && (
@@ -417,6 +505,7 @@ export default function AdminPanel() {
               {lowStockProducts.length} low
             </span>
           )}
+          {tabLoading.products && <span className="ml-1 text-xs">⏳</span>}
         </button>
       </div>
 
@@ -425,10 +514,13 @@ export default function AdminPanel() {
         <div className="space-y-4">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-2xl font-bold">Student Verifications</h2>
-            <Button onClick={loadData} variant="outline">Refresh</Button>
+            <Button onClick={refreshCurrentTab} variant="outline">Refresh</Button>
           </div>
-
-          {students.length === 0 ? (
+          {tabLoading.students ? (
+            <div className="text-center py-8 text-gray-500">Loading students...</div>
+          ) : (
+            <>
+              {students.length === 0 ? (
             <Card>
               <CardContent className="p-8 text-center text-gray-500">
                 No requests
@@ -481,6 +573,8 @@ export default function AdminPanel() {
                 </CardContent>
               </Card>
             ))
+              )}
+            </>
           )}
         </div>
       )}
@@ -490,7 +584,7 @@ export default function AdminPanel() {
         <div className="space-y-4">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-2xl font-bold">Business Verifications</h2>
-            <Button onClick={loadData} variant="outline">Refresh</Button>
+            <Button onClick={refreshCurrentTab} variant="outline">Refresh</Button>
           </div>
 
           {businesses.length === 0 ? (
@@ -586,7 +680,7 @@ export default function AdminPanel() {
         <div className="space-y-4">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-2xl font-bold">Sales Activity Log</h2>
-            <Button onClick={loadData} variant="outline">Refresh</Button>
+            <Button onClick={refreshCurrentTab} variant="outline">Refresh</Button>
           </div>
 
           {/* Filters: status, date-range, keyword */}
@@ -700,7 +794,7 @@ export default function AdminPanel() {
         <div className="space-y-4">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-2xl font-bold">Returns & Refunds Management</h2>
-            <Button onClick={loadData} variant="outline">Refresh</Button>
+            <Button onClick={refreshCurrentTab} variant="outline">Refresh</Button>
           </div>
 
           {/* Returns Metrics */}
@@ -932,7 +1026,7 @@ export default function AdminPanel() {
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-2xl font-bold">Flash Sales</h2>
             <div className="flex space-x-2">
-              <Button onClick={loadData} variant="outline">Refresh</Button>
+              <Button onClick={refreshCurrentTab} variant="outline">Refresh</Button>
               <Button onClick={() => setShowCreateFlashSale(!showCreateFlashSale)}>
                 {showCreateFlashSale ? 'Cancel' : '+ Create Flash Sale'}
               </Button>
@@ -1219,7 +1313,7 @@ export default function AdminPanel() {
                   className="w-20 border border-gray-300 rounded px-2 py-1 text-sm"
                 />
               </div>
-              <Button onClick={loadData} variant="outline">Refresh</Button>
+              <Button onClick={refreshCurrentTab} variant="outline">Refresh</Button>
             </div>
           </div>
 

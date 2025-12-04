@@ -232,3 +232,4 @@ export default function ProductDetail({ user, onLogin, onCartUpdate }) {
   );
 }
 
+
