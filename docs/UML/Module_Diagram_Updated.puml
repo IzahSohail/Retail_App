@@ -1,35 +1,130 @@
 @startuml
-' Module / Component diagram showing backend modules and their responsibilities
-package "Backend Modules" {
+' Module / Component diagram showing all current backend modules and their responsibilities
+title Module Diagram - Backend Architecture
+
+package "Backend Core" {
   [server.js] as server
-  [routes/*] as routes
-  [services/*] as services
-  [utils/*] as utils
-  [db.js / Prisma Wrapper] as prisma
+  [db.js / Prisma Client] as prisma
   [supabase.js] as supabase
-  [payments/*] as payments
-  [rmaService.js] as rma
 }
 
-server --> routes : registers endpoints
-routes --> services : delegate business logic
-services --> prisma : read/write
-services --> supabase : uploads
-payments --> services : invoked by purchase flows
-rma --> services : return processing
+package "Route Modules" {
+  [admin.dashboard.js] as adminDashboard
+  [admin.flashsales.js] as adminFlashSales
+  [business.js] as businessRoutes
+  [verification.js] as verificationRoutes
+  [rma.js] as rmaRoutes
+  [pricing.js] as pricingRoutes
+}
 
-routes : - /api/purchases
-routes : - /api/admin/purchases
-routes : - /api/_dev/purchases-sample
-routes : - /api/_dev/admin/purchases-sample
+package "Service Modules" {
+  [PaymentService.js] as paymentService
+  [MockPaymentAdapter.js] as paymentAdapter
+  [rmaService.js] as rmaService
+  [flashSale.js] as flashSaleService
+  [catalogETL.js] as catalogService
+}
 
-services : - PurchaseService
-services : - CartService
-services : - RMAService
-services : - FlashSaleService
+package "Utilities" {
+  [utils/*] as utils
+}
 
-prisma : wraps @prisma/client
-supabase : provides uploadProductImage(buffer, name, id)
+package "External Systems" {
+  database "PostgreSQL\n(Aiven Cloud)" as postgres
+  cloud "Supabase\nStorage" as supabaseStorage
+  cloud "Auth0\nOIDC" as auth0
+}
 
-note "Design notes:\n- Separation of concerns: routes are thin, services hold transactions and retry logic.\n- Dev-only routes live behind DEV_ALLOW_TEST_ROUTE." as N
+' Core connections
+server --> adminDashboard : registers /api/admin/dashboard/*
+server --> adminFlashSales : registers /api/admin/flashsales/*
+server --> businessRoutes : registers /api/business/*
+server --> verificationRoutes : registers /api/verification/*
+server --> rmaRoutes : registers /api/rma/*
+server --> pricingRoutes : registers /api/pricing/*
+
+' Route to Service dependencies
+adminDashboard --> prisma : query verification, business, sales
+adminFlashSales --> flashSaleService : manage flash sales
+businessRoutes --> prisma : B2B verification
+verificationRoutes --> prisma : student verification
+rmaRoutes --> rmaService : return processing
+rmaRoutes --> supabase : photo uploads
+pricingRoutes --> flashSaleService : calculate discounts
+
+' Service dependencies
+paymentService --> paymentAdapter : process payments
+paymentService --> prisma : record transactions
+rmaService --> prisma : CRUD returns/refunds
+rmaService --> paymentService : process refunds
+flashSaleService --> prisma : query flash sales
+catalogService --> prisma : bulk import products
+
+' Core to External
+prisma --> postgres : Prisma ORM queries
+supabase --> supabaseStorage : upload images/photos
+server --> auth0 : OIDC authentication
+
+note right of server
+  Main Express server with inline routes:
+  - POST /api/purchase (direct purchase)
+  - POST /api/cart/checkout (cart checkout)
+  - GET /api/purchases (user purchases)
+  - GET /api/products (product listing)
+  - POST /api/cart/add (cart operations)
+  
+  All routes use Auth0 OIDC middleware
+end note
+
+note right of adminDashboard
+  Admin Routes:
+  - GET /verification-requests
+  - POST /verification-requests/:id/review
+  - GET /businesses
+  - POST /businesses/:id/verify
+  - GET /purchases (with filters)
+  
+  Filters: status, startDate, endDate, keyword
+end note
+
+note right of rmaRoutes
+  RMA Routes:
+  - POST / (create return request)
+  - GET / (get user/admin returns)
+  - POST /:id/status (update status)
+  - POST /:id/inspection (record inspection)
+  - POST /:id/shipment (track shipment)
+  - POST /:id/refund (process refund)
+end note
+
+note right of paymentService
+  Features:
+  - Exponential backoff retry
+  - Circuit breaker (5 failures)
+  - Idempotency caching
+  - Mock adapter for development
+end note
+
+note right of rmaService
+  RMA Processing:
+  - Validates return eligibility
+  - Generates unique RMA numbers
+  - Manages return lifecycle
+  - Processes refunds via PaymentService
+  - Tracks defective items
+end note
+
+note left of prisma
+  Prisma ORM wrapping:
+  - User, Product, Category
+  - Sale, SaleItem, Payment
+  - Cart, CartItem
+  - FlashSale, FlashSaleItem
+  - ReturnRequest, ReturnItem
+  - Refund, Inspection
+  - B2B, VerificationRequest
+  
+  All with type safety and migrations
+end note
+
 @enduml
