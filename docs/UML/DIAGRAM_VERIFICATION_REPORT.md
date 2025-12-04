@@ -60,6 +60,7 @@
 - ✅ `SaleStatus`: PENDING, COMPLETED, CANCELED, REFUND_PENDING, REFUNDED
 - ✅ `PaymentMethod`: CASH, CARD, STORE_CREDIT
 - ✅ `PaymentStatus`: APPROVED, DECLINED, REFUNDED, PARTIALLY_REFUNDED
+  - **Note**: Updated from previous diagram which had PENDING and ERROR. Current schema (prisma/schema.prisma lines 148-154) only defines the 4 values shown above.
 - ✅ `RmaStatus`: INSPECTION, APPROVED_AWAITING_SHIPMENT, REJECTED, SHIPPED, COMPLETED, CLOSED
 - ✅ `RefundMethod`: ORIGINAL_PAYMENT, STORE_CREDIT, MANUAL
 - ✅ `B2BStatus`: PENDING, UNDER_REVIEW, VERIFIED, REJECTED

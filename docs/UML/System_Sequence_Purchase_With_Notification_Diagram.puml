@@ -52,8 +52,9 @@ alt Sale Already Exists
   Server --> Frontend : 200 OK\n{ success: true, message: "Already processed",\n  saleId, status, payment }
   Frontend --> Buyer : Show existing order details
   note right of Frontend
-    Idempotency prevents duplicate charges
-    for retried requests with same key
+    Idempotency prevents duplicate charges.
+    Uses idempotency-key from request header
+    to check for existing sale records.
   end note
 else Sale Does Not Exist
   
@@ -132,8 +133,9 @@ else Sale Does Not Exist
   
   Payment -> Payment : Check idempotency cache
   note right of Payment
-    If payment already processed
-    for this saleId, return cached result
+    Cache key: idempotencyKey (passed in request)
+    If payment already processed with this key,
+    return cached result without retry
   end note
   
   Payment -> Payment : Check circuit breaker state

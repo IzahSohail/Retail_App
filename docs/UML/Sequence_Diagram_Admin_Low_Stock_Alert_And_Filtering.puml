@@ -32,6 +32,13 @@ note right of AdminRoutes
 end note
 
 AdminRoutes -> AdminRoutes : Validate admin access
+note right of AdminRoutes
+  Admin emails are currently hardcoded.
+  Consider externalizing to environment
+  variables or database for better
+  maintainability and security.
+end note
+
 alt User is Admin
   AdminRoutes -> Prisma : findMany(Sale) with full includes
   activate Prisma
