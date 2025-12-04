@@ -33,10 +33,19 @@ end note
 
 AdminRoutes -> AdminRoutes : Validate admin access
 note right of AdminRoutes
-  Admin emails are currently hardcoded.
-  Consider externalizing to environment
-  variables or database for better
-  maintainability and security.
+  ⚠️ MAINTAINABILITY CONCERN:
+  Admin emails are hardcoded and
+  duplicated across 4 files:
+  - server.js
+  - admin.dashboard.js
+  - admin.flashsales.js
+  - rma.js
+  
+  This creates maintenance burden and
+  potential inconsistency risks.
+  
+  Recommendation: Externalize to
+  environment variables or database.
 end note
 
 alt User is Admin

@@ -133,9 +133,15 @@ else Sale Does Not Exist
   
   Payment -> Payment : Check idempotency cache
   note right of Payment
-    Cache key: idempotencyKey (passed in request)
+    Cache key: idempotencyKey = saleId
+    (passed in processPayment request)
+    
+    Note: Sale-level idempotency uses the
+    idempotency-key header, but payment-level
+    caching uses the saleId for deduplication.
+    
     If payment already processed with this key,
-    return cached result without retry
+    return cached result without retry.
   end note
   
   Payment -> Payment : Check circuit breaker state

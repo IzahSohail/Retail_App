@@ -230,10 +230,27 @@ successThreshold: 2
 circuitTimeout: 60000ms
 ```
 
-### Admin Emails (Consistent across all route files)
+**Idempotency Mechanism**:
+- **Sale-level**: Uses `idempotency-key` from request header to prevent duplicate sales
+- **Payment-level**: Uses `saleId` as cache key to prevent duplicate payment processing
+- PaymentService receives `idempotencyKey: sale.id` in processPayment call (server.js line 983)
+
+### Admin Emails (⚠️ Hardcoded and Duplicated)
 ```javascript
 ['izahs2003@gmail.com', 'tj2286@nyu.edu']
 ```
+
+**Maintainability Concern**: These admin emails are hardcoded and duplicated across 4 files:
+- `backend/src/server.js`
+- `backend/src/routes/admin.dashboard.js`
+- `backend/src/routes/admin.flashsales.js`
+- `backend/src/routes/rma.js`
+
+**Recommendation**: Externalize to environment variables or database table to:
+- Reduce duplication
+- Prevent inconsistencies
+- Enable dynamic admin management
+- Improve security
 
 ---
 
