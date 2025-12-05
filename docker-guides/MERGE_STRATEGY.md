@@ -32,10 +32,10 @@
 - `frontend/index.html`
 
 **Documentation:**
-- `DOCKER_GUIDE.md`
-- `DOCKER_QUICKSTART.md`
-- `DOCKER_README.md`
-- `RUN_WITHOUT_DOCKER.md`
+- `docker-guides/DOCKER_GUIDE.md`
+- `docker-guides/DOCKER_QUICKSTART.md`
+- `docker-guides/DOCKER_README.md`
+- `docker-guides/RUN_WITHOUT_DOCKER.md`
 - `docs/README.md`
 - `docs/UML/` (entire folder with 13 files)
 

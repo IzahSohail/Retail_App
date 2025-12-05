@@ -3,13 +3,13 @@
 ## 📋 Table of Contents
 
 ### 1. Project Overview
-- [README.md](../../readme.md) - Project introduction and setup instructions
-- [ADRs](../ADRs/) - Architecture Decision Records
+- [README.md](../../README.md) - Project introduction and setup instructions
+- [ADRs](../../ADRs/) - Architecture Decision Records
 
 ### 2. Docker & Deployment
-- [Docker README](../../DOCKER_README.md) - Comprehensive Docker setup guide
-- [Docker Quick Start](../../DOCKER_QUICKSTART.md) - Quick reference commands
-- [Docker Guide](../../DOCKER_GUIDE.md) - Detailed Docker documentation
+- [Docker README](../../docker-guides/DOCKER_README.md) - Comprehensive Docker setup guide
+- [Docker Quick Start](../../docker-guides/DOCKER_QUICKSTART.md) - Quick reference commands
+- [Docker Guide](../../docker-guides/DOCKER_GUIDE.md) - Detailed Docker documentation
 
 ### 3. UML Diagrams - Process Refund Use Case
 
@@ -109,7 +109,7 @@ docs/
 │   ├── Process_Refund_SSD_Detailed.md
 │   ├── Process_Refund_Class_Diagram.puml
 │   ├── Process_Refund_Deployment_Diagram.puml
-│   └── SSD_Business_Verification_Checkpoint2.png.crdownload
+│   └── (various diagram files)
 └── ADRs/
     └── (Architecture Decision Records)
 ```
@@ -201,8 +201,8 @@ docs/
 
 ## 🚀 Quick Links
 
-- [Start Docker](../../DOCKER_QUICKSTART.md#-start-application)
-- [View Logs](../../DOCKER_README.md#view-logs)
+- [Start Docker](../../docker-guides/DOCKER_QUICKSTART.md#-start-application)
+- [View Logs](../../docker-guides/DOCKER_README.md#view-logs)
 - [Database Schema](../../prisma/schema.prisma)
 - [Backend Routes](../../backend/src/routes/)
 - [Frontend Components](../../frontend/src/components/)
@@ -232,4 +232,4 @@ When adding new UML diagrams:
 
 ---
 
-*For questions or clarifications, refer to the [main README](../../readme.md) or contact the development team.*
+*For questions or clarifications, refer to the [main README](../../README.md) or contact the development team.*

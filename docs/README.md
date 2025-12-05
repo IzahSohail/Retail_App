@@ -24,8 +24,8 @@ docs/
 
 ## 🚀 Quick Start
 
-1. **Setup:** [Main README](../readme.md)
-2. **Docker:** [Docker Quick Start](../DOCKER_QUICKSTART.md)
+1. **Setup:** [Main README](../README.md)
+2. **Docker:** [Docker Quick Start](../docker-guides/DOCKER_QUICKSTART.md)
 3. **API:** [Backend Routes](../backend/src/routes/)
 4. **Frontend:** [React Components](../frontend/src/components/)
 
@@ -332,7 +332,7 @@ docker-compose -f docker-compose-vite.yml down
 - `backend/Dockerfile.vite` - Backend container
 - `frontend/Dockerfile.build` - Frontend build container
 
-[Complete Docker Guide](../DOCKER_README.md)
+[Complete Docker Guide](../docker-guides/DOCKER_README.md)
 
 ---
 
@@ -459,11 +459,11 @@ Legend: ✅ Complete | 🟡 In Progress | ⏳ Planned | ❌ Outdated
 
 ## 🆘 Need Help?
 
-- **Setup Issues:** See [DOCKER_README.md](../DOCKER_README.md)
+- **Setup Issues:** See [DOCKER_README.md](../docker-guides/DOCKER_README.md)
 - **API Questions:** Check [backend/src/routes/](../backend/src/routes/)
 - **Frontend:** Review [frontend/src/components/](../frontend/src/components/)
 - **Database:** See [prisma/schema.prisma](../prisma/schema.prisma)
-- **General:** Refer to [main README](../readme.md)
+- **General:** Refer to [main README](../README.md)
 
 ---
 

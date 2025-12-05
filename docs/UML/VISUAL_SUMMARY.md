@@ -238,7 +238,7 @@ Step 6: Implementation ─────► Write/modify code
 └──────────────────────────────────────────────────────────────────────┘
 
 Questions?              → docs/README.md
-Setup Issues?           → ../DOCKER_README.md
+Setup Issues?           → ../docker-guides/DOCKER_README.md
 API Documentation?      → ../backend/src/routes/
 Frontend Components?    → ../frontend/src/components/
 

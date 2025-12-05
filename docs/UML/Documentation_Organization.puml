@@ -5,7 +5,10 @@ skinparam backgroundColor #FFFFFF
 title Retail App - Documentation Organization
 
 package "Root Documentation" {
-    [readme.md] as MainReadme
+    [README.md] as MainReadme
+}
+
+package "docker-guides/" {
     [DOCKER_README.md] as DockerReadme
     [DOCKER_QUICKSTART.md] as DockerQuick
 }
@@ -27,9 +30,10 @@ package "docs/" {
         }
     }
     
-    package "docs/ADRs/" {
-        [Architecture Decision Records] as ADRs
-    }
+}
+
+package "ADRs/" {
+    [Architecture Decision Records] as ADRs
 }
 
 package "Source Code" {

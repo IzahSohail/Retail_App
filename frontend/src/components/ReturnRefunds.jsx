@@ -100,6 +100,19 @@ export default function ReturnsRefunds({ user, onViewed }) {
 
       if (response.data.success) {
         alert(`Return request created successfully! RMA #${response.data.rma.rmaNumber}`);
+        
+        // Update returnsLastSeenAt to the new request's updatedAt timestamp
+        // This prevents the newly created request from showing as a notification
+        if (response.data.rma?.updatedAt) {
+          const newRequestTimestamp = new Date(response.data.rma.updatedAt).getTime();
+          if (typeof window !== 'undefined') {
+            window.localStorage.setItem('returnsLastSeenAt', newRequestTimestamp.toString());
+          }
+          if (typeof onViewed === 'function') {
+            onViewed(newRequestTimestamp);
+          }
+        }
+        
         setShowCreateModal(false);
         setSelectedPurchase(null);
         setSelectedItems([]);

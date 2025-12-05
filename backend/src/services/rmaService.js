@@ -125,7 +125,21 @@ export const RmaService = {
     if (!validStatuses.includes(status)) {
       throw new Error('Invalid status');
     }
-    const updated = await prisma.returnRequest.update({ where: { id }, data: { status } });
+    
+    // Set completedAt when status is set to COMPLETED (for cycle time metrics)
+    const updateData = { status };
+    if (status === 'COMPLETED') {
+      // Only set completedAt if it's not already set (preserve original completion time)
+      const existing = await prisma.returnRequest.findUnique({ 
+        where: { id }, 
+        select: { completedAt: true } 
+      });
+      if (!existing?.completedAt) {
+        updateData.completedAt = new Date();
+      }
+    }
+    
+    const updated = await prisma.returnRequest.update({ where: { id }, data: updateData });
     await prisma.rmaAuditLog.create({ 
       data: { 
         returnRequestId: id, 

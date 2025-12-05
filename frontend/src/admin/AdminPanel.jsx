@@ -106,7 +106,11 @@ export default function AdminPanel() {
 
         case 'returns':
           if (!loadedTabs.has('returns')) {
-            const returnsRes = await fetch('/api/rma', { credentials: 'include' });
+            // Load both returns and sales (sales needed for refund rate calculation)
+            const [returnsRes] = await Promise.all([
+              fetch('/api/rma', { credentials: 'include' }),
+              loadSales() // Load sales in parallel for refund rate calculation
+            ]);
             const returnsData = await returnsRes.json();
             setReturns(returnsData.rmas || returnsData.returns || []);
             setLoadedTabs(prev => new Set([...prev, 'returns']));
@@ -863,14 +867,26 @@ export default function AdminPanel() {
                   <CardContent>
                     <div className="text-2xl font-bold">
                       {(() => {
-                        const refundedSales = sales.filter(s => s.status === 'REFUNDED').length;
-                        const totalOrders = sales.filter(s => s.status === 'COMPLETED' || s.status === 'REFUNDED').length;
-                        return totalOrders > 0 
-                          ? ((refundedSales / totalOrders) * 100).toFixed(1)
+                        // Calculate based on returns data (returns with refunds vs total returns)
+                        const returnsWithRefunds = returns.filter(r => r.refunds && r.refunds.length > 0).length;
+                        const totalReturns = returns.length;
+                        // Alternative: if we have sales data, use that for more accurate calculation
+                        if (sales.length > 0) {
+                          const refundedSales = sales.filter(s => s.status === 'REFUNDED').length;
+                          const totalOrders = sales.filter(s => s.status === 'COMPLETED' || s.status === 'REFUNDED').length;
+                          return totalOrders > 0 
+                            ? ((refundedSales / totalOrders) * 100).toFixed(1)
+                            : '0.0';
+                        }
+                        // Fallback: use returns data
+                        return totalReturns > 0 
+                          ? ((returnsWithRefunds / totalReturns) * 100).toFixed(1)
                           : '0.0';
                       })()}%
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">refunded orders / total orders</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {sales.length > 0 ? 'refunded orders / total orders' : 'returns with refunds / total returns'}
+                    </p>
                   </CardContent>
                 </Card>
               </div>

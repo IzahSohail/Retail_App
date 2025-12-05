@@ -101,9 +101,15 @@ export default function App() {
           return;
         }
 
-        // If never seen before on this device, treat existing returns as notifications
+        // If never seen before on this device, initialize lastSeen to current time
+        // This prevents existing returns from showing as notifications
+        // Only future status changes will trigger notifications
         if (!lastSeen) {
-          setHasReturnNotifications(true);
+          const now = Date.now();
+          if (typeof window !== 'undefined') {
+            window.localStorage.setItem('returnsLastSeenAt', now.toString());
+          }
+          setHasReturnNotifications(false);
           return;
         }
 

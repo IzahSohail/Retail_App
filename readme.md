@@ -196,11 +196,11 @@ docker-compose exec backend npx prisma migrate deploy
 - Application: http://localhost:3001
 - Database: PostgreSQL on port 5433 (mapped from container port 5432)
 
-**Note:** Ensure your `.env` file is configured before starting Docker containers. For detailed Docker documentation, see `Docker guides/` folder.
+**Note:** Ensure your `.env` file is configured before starting Docker containers. For detailed Docker documentation, see `docker-guides/` folder.
 
 ### 7) Deploy & Push (Aiven Cloud)
 
-1. Deploy the backend (Render/Railway/Vercel/VM).
+1. Deploy the backend.
 2. Set Aiven env vars in your deployment.
 3. Push your code:
    ```bash
